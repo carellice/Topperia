@@ -1,0 +1,52 @@
+plugins { id 'com.android.application' }
+
+def appVersion = new Properties()
+rootProject.file('version.properties').withInputStream { appVersion.load(it) }
+def releaseSettings = new Properties()
+rootProject.file('release.properties').withInputStream { releaseSettings.load(it) }
+def privateSigning = new Properties()
+def privateSigningFile = rootProject.file('signing.properties')
+if (privateSigningFile.exists()) {
+    privateSigningFile.withInputStream { privateSigning.load(it) }
+}
+
+android {
+    namespace 'it.topperia.game'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'it.topperia.game'
+        minSdk 26
+        targetSdk 36
+        versionCode Integer.parseInt(appVersion.getProperty('VERSION_CODE'))
+        versionName appVersion.getProperty('VERSION_NAME')
+        buildConfigField 'String', 'GITHUB_OWNER', '"' + releaseSettings.getProperty('GITHUB_OWNER') + '"'
+        buildConfigField 'String', 'GITHUB_REPO', '"' + releaseSettings.getProperty('GITHUB_REPO') + '"'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures { buildConfig true }
+
+    signingConfigs {
+        if (privateSigningFile.exists()) {
+            distribution {
+                storeFile rootProject.file(privateSigning.getProperty('storeFile'))
+                storePassword privateSigning.getProperty('storePassword')
+                keyAlias privateSigning.getProperty('keyAlias')
+                keyPassword privateSigning.getProperty('keyPassword')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            debuggable false
+            if (privateSigningFile.exists()) signingConfig signingConfigs.distribution
+        }
+    }
+}

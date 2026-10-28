@@ -1,0 +1,6 @@
+# Copy to signing.properties and fill in your private keystore locally.
+# signing.properties and signing/ are excluded from Git.
+storeFile=signing/topperia.keystore
+storePassword=YOUR_LOCAL_KEYSTORE_PASSWORD
+keyAlias=YOUR_KEY_ALIAS
+keyPassword=YOUR_LOCAL_KEY_PASSWORD
