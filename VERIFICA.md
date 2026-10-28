@@ -1,4 +1,26 @@
-# Verifica di Topperia 1.1.1
+# Verifiche di Topperia
+
+## Release 1.1.3 e aggiornamenti integrati
+
+Verifica del 28 ottobre 2026. Repository pubblica: [carellice/Topperia](https://github.com/carellice/Topperia). La release stabile [v1.1.3](https://github.com/carellice/Topperia/releases/tag/v1.1.3) contiene APK firmato, `update.json` e checksum SHA-256.
+
+- Eseguito realmente `release.bat`: incremento da 1.1.2 / 4 a **1.1.3 / 5**, test, `assembleRelease`, `lintRelease`, verifica firma e metadati, commit di versione, tag, push, creazione bozza, upload, download di verifica e pubblicazione come Latest. Verificato anche il riconoscimento delle bozze tramite ID autenticato.
+- Eseguito `release.bat -Resume` sulla release pubblicata: asset nuovamente verificati, versione invariata e nessuna nuova release. Il dry-run è verificato anche in una cartella con spazi e non modifica i file.
+- Superate **122 asserzioni della procedura di rilascio**, **2.766 del motore e dei contenuti**, **925 della selezione casuale** e **53 delle regole degli aggiornamenti**. Queste ultime coprono metadati, URL, host dei redirect, hash, firma e confronto delle versioni.
+- Android Lint: **zero errori e cinque avvisi**. Quattro riguardano orientamento, backup e risorse già presenti; uno segnala un aggiornamento disponibile del wrapper Gradle. Nessun errore di esecuzione Android nei log del collaudo.
+- Chiave, password, configurazione locale, cache e APK esclusi da Git. L’archivio portabile dei sorgenti è stato controllato per escludere anche `signing.properties`, directory delle chiavi e file di credenziali.
+
+Prova completa su un Pixel virtuale isolato, Android 15 / API 35:
+
+1. Installata una build di verifica 1.1.1 / 3 con il nuovo updater e creato un salvataggio con Brasile scoperto nella classifica del caffè, una risposta corretta e nove tentativi residui.
+2. Il controllo manuale ha letto la release pubblica GitHub, mostrato versione, dimensione e note, scaricato l’APK 1.1.2 e verificato integrità, package, versione e firma.
+3. Rimandata l’installazione, arrestato il processo e riaperta l’app: l’APK privato era ancora disponibile con il pulsante Installa.
+4. Concesso il permesso dalla schermata Android e confermato l’aggiornamento nell’installer di sistema. Dopo il passaggio alla build release 1.1.2, onboarding completato, animazioni ridotte e partita risultavano conservati; verificati di nuovo Brasile e i nove tentativi.
+5. Ripetuto l’aggiornamento dall’app dalla 1.1.2 alla **1.1.3**, scaricando l’APK pubblico e confermando l’installer con il permesso già concesso. Il controllo successivo mostra **«Hai già la versione più recente»**; Android conferma versionCode 5.
+
+Le schermate di prova sono in `output/screenshots-v1.1.3/`, escluse dalla repository. Il collaudo non copre un telefono fisico o tutte le versioni Android supportate.
+
+Le sezioni seguenti documentano le verifiche precedenti della versione 1.1.1.
 
 ## Logo e icona Android
 
