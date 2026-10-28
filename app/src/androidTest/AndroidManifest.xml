@@ -3,4 +3,7 @@
     <instrumentation
         android:name="it.topperia.game.MotionInstrumentation"
         android:targetPackage="it.topperia.game" />
+    <instrumentation
+        android:name="it.topperia.game.UpdateInstrumentation"
+        android:targetPackage="it.topperia.game" />
 </manifest>

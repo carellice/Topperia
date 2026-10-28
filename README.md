@@ -70,6 +70,8 @@ Puoi cercare una nuova versione dalle **Impostazioni di Topperia**. L’app cont
 
 Il download parte dopo la tua conferma. Topperia verifica versione, integrità e firma del pacchetto, quindi propone **Installa**. L’aggiornamento passa sempre dalla conferma dell’installer Android; se necessario, Android richiede prima il consenso per installare aggiornamenti da Topperia. I dettagli sulle richieste di rete e sui dati locali sono nella [privacy](docs/PRIVACY.md).
 
+Se una versione precedente resta ferma su **Installa**, scarica e apri l’APK dell’ultima release una volta: la **1.1.5** corregge la perdita della richiesta del permesso Android. Firma, partite e preferenze restano compatibili.
+
 ## Compila il progetto
 
 Apri la cartella in **Android Studio** oppure usa il wrapper Gradle incluso. Servono **JDK 17 o successivo** e **Android SDK 36**; il sorgente Java usa il livello 17.

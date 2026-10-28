@@ -71,7 +71,7 @@ public final class GitHubUpdater {
             if (downloaded != null && !UpdatePolicy.isNewer(downloaded.versionCode, installedCode())) {
                 discardDownloaded(); downloaded = null;
             }
-        } catch (Exception ignored) { downloaded = null; }
+        } catch (Exception ignored) { discardDownloaded(); downloaded = null; }
     }
 
     public boolean isBusy() { return busy; }
@@ -112,9 +112,12 @@ public final class GitHubUpdater {
                 requireCurrentUpdate(update);
                 File directory = UpdateApkProvider.directory(context);
                 if (!directory.isDirectory() && !directory.mkdirs()) throw new UserFailure("Non riesco a preparare il download.");
+                boolean cached = false;
                 if (downloaded != null && downloaded.sha256.equals(update.sha256) && UpdateApkProvider.apk(context).isFile()) {
-                    validateApk(UpdateApkProvider.apk(context), update);
-                } else {
+                    try { validateApk(UpdateApkProvider.apk(context), update); cached = true; }
+                    catch (Exception invalid) { requireOpen(); discardDownloaded(); downloaded = null; }
+                }
+                if (!cached) {
                     part = new File(directory, "download-" + UUID.randomUUID() + ".part");
                     download(update, part);
                     validateApk(part, update);
@@ -144,7 +147,11 @@ public final class GitHubUpdater {
                     if (!packages.canRequestPackageInstalls()) listener.onInstallPermissionRequired();
                     else openInstaller();
                 });
-            } catch (Exception error) { busy = false; report(error, true); }
+            } catch (Exception error) {
+                // A rejected cached APK must not leave the player stuck on Installa.
+                if (!closed) { discardDownloaded(); downloaded = null; }
+                busy = false; report(error, true);
+            }
         });
     }
 

@@ -1,5 +1,23 @@
 # Verifiche di Topperia
 
+## Aggiornamento dall’app — 1.1.5
+
+Verifica del 28 ottobre 2026, Android 15 / API 35 su emulatore isolato.
+
+- Riprodotto il difetto nella release firmata **1.1.3**: download pubblico della **1.1.4**, controllo di integrità e firma completati, quindi tocco su **Installa**. La finestra si chiudeva e la richiesta del permesso Android non compariva.
+- Il callback del controllo APK poteva arrivare mentre il dialogo precedente possedeva ancora il focus. Le richieste vengono ora conservate in `UpdatePromptQueue` e mostrate quando l’attività è ripresa, collegata alla finestra e nuovamente focalizzata. La stessa gestione copre disponibilità, download completato, permesso ed errori.
+- Installata una build di verifica con la correzione, firmata con la chiave persistente e mantenuta al codice versione precedente, sopra l’installazione di prova. Download già verificato e preferenze sono rimasti presenti. Il nuovo tocco su **Installa** ha mostrato **Consenti gli aggiornamenti**; dopo il consenso nelle impostazioni Android si è aperto l’installer di sistema. Confermato **Update**, Android ha installato realmente la release pubblica **1.1.4 / 6** e l’app si è riaperta sulla home senza ripetere l’onboarding.
+- Gli APK in cache che falliscono la verifica vengono rimossi insieme ai metadati. Il comando torna a proporre il download; un tentativo di download non riutilizza più all’infinito lo stesso file corrotto.
+- Superate **40 verifiche Android**: focus occupato da un altro dialogo, callback dal pulsante durante la chiusura, richieste durante la pausa, ritorno in primo piano, finestre consecutive e rifiuto di un APK corrotto tramite il vero pulsante **Installa**. Build debug e test compilate; immagini del prima/dopo in `output/screenshots-v1.1.5/`, escluse da Git.
+
+Runner di regressione, da eseguire soltanto su un emulatore di prova dopo aver installato gli APK debug e androidTest:
+
+```powershell
+adb -s emulator-5562 shell am instrument -w it.topperia.game.test/it.topperia.game.UpdateInstrumentation
+```
+
+La versione già installata contiene ancora il vecchio flusso: se rimane bloccata su Installa, l’APK 1.1.5 può essere aperto manualmente una volta mantenendo i dati. Le prove coprono Android 15 su emulatore, non tutti i dispositivi fisici supportati.
+
 ## Animazioni e scorrimento — 1.1.4
 
 Verifica del 28 ottobre 2026 su un emulatore isolato Android 15 / API 35, 1080 × 2400, 420 dpi, con accelerazione GPU host.

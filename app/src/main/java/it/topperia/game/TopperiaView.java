@@ -29,6 +29,7 @@ import it.topperia.game.engine.RankedList;
 import it.topperia.game.engine.RankingPicker;
 import it.topperia.game.update.GitHubUpdater;
 import it.topperia.game.update.UpdateInfo;
+import it.topperia.game.update.UpdatePromptQueue;
 import it.topperia.game.ui.Motion;
 import java.util.*;
 
@@ -48,6 +49,7 @@ public final class TopperiaView extends ViewGroup {
     private final Button submit;
     private ToneGenerator tones;
     private final GitHubUpdater updater;
+    private final UpdatePromptQueue updatePrompts;
     private UpdateInfo availableUpdate;
     private String updateStatus="Controlla se ci sono nuove versioni.";
     private boolean manualUpdateCheck=false,updateReady=false;
@@ -92,6 +94,7 @@ public final class TopperiaView extends ViewGroup {
 
     public TopperiaView(Context context) {
         super(context); activity=(Activity)context; store=new GameStore(context); rankings=Rankings.all();
+        updatePrompts=new UpdatePromptQueue(activity,this);
         scroller=new OverScroller(context);
         ViewConfiguration config=ViewConfiguration.get(context);touchSlop=config.getScaledTouchSlop();minFling=config.getScaledMinimumFlingVelocity();maxFling=config.getScaledMaximumFlingVelocity();
         categories.add("Tutte");for(RankedList ranking:rankings)categories.add(ranking.category);
@@ -126,21 +129,22 @@ public final class TopperiaView extends ViewGroup {
         @Override public void onUpdateAvailable(UpdateInfo info){boolean manual=manualUpdateCheck;manualUpdateCheck=false;UpdateInfo cached=updater.downloadedUpdate();availableUpdate=info;updateReady=cached!=null&&cached.sha256.equals(info.sha256);downloadProgress=updateReady?100:-1;updateStatus=updateReady?"Aggiornamento scaricato. Pronto da installare.":"Disponibile la versione "+info.versionName+".";invalidate();if(manual||(!screen.equals("game")&&!screen.equals("onboarding")&&!screen.equals("shuffle"))){if(updateReady)offerInstall(info);else offerUpdate(info);}}
         @Override public void onDownloadProgress(int progress){downloadProgress=progress;updateStatus=progress<0?"Scaricamento in corso…":"Scaricamento in corso · "+progress+"%";invalidate();}
         @Override public void onReadyToInstall(UpdateInfo info){availableUpdate=info;updateReady=true;downloadProgress=100;updateStatus="Aggiornamento verificato. Pronto da installare.";invalidate();offerInstall(info);}
-        @Override public void onInstallPermissionRequired(){if(!updateWindowReady())return;new AlertDialog.Builder(activity).setTitle("Consenti gli aggiornamenti").setMessage("Android richiede il permesso di installare aggiornamenti da Topperia. Apri l’impostazione e abilita il consenso: poi potrai confermare l’installazione.").setNegativeButton("Più tardi",(d,w)->updater.cancelPendingInstall()).setPositiveButton("Apri impostazione",(d,w)->updater.requestInstallPermission()).show();}
+        @Override public void onInstallPermissionRequired(){updatePrompts.post(()->updatePrompts.show(new AlertDialog.Builder(activity).setTitle("Consenti gli aggiornamenti").setMessage("Android richiede il permesso di installare aggiornamenti da Topperia. Apri l’impostazione e abilita il consenso: poi potrai confermare l’installazione.").setNegativeButton("Più tardi",(d,w)->updater.cancelPendingInstall()).setPositiveButton("Apri impostazione",(d,w)->updater.requestInstallPermission())));}
         @Override public void onInstallerOpened(){updateStatus="Conferma l’aggiornamento nella schermata Android.";invalidate();}
-        @Override public void onError(String message){manualUpdateCheck=false;downloadProgress=-1;updateStatus=message;invalidate();if(updateWindowReady())new AlertDialog.Builder(activity).setTitle("Aggiornamento non completato").setMessage(message).setPositiveButton("Ho capito",null).show();}
+        @Override public void onError(String message){manualUpdateCheck=false;downloadProgress=-1;UpdateInfo cached=updater.downloadedUpdate();updateReady=cached!=null&&availableUpdate!=null&&cached.sha256.equals(availableUpdate.sha256);updateStatus=message;invalidate();updatePrompts.post(()->updatePrompts.show(new AlertDialog.Builder(activity).setTitle("Aggiornamento non completato").setMessage(message).setPositiveButton("Ho capito",null)));}
     });}
-    private boolean updateWindowReady(){return isAttachedToWindow()&&activity.hasWindowFocus()&&!activity.isFinishing()&&!activity.isDestroyed();}
     private void offerUpdate(UpdateInfo info){
-        if(!updateWindowReady())return;
+        updatePrompts.post(()->{
         String notes=info.notes==null?"":info.notes.replaceAll("(?m)^#{1,6}\\s*","").replace("**","").trim();if(notes.length()>1000)notes=notes.substring(0,1000)+"…";
         String size=String.format(Locale.ITALIAN,"%.1f MB",info.sizeBytes/1048576f);
-        new AlertDialog.Builder(activity).setTitle("Topperia "+info.versionName+" è pronta").setMessage("Puoi scaricare l’aggiornamento da GitHub ("+size+"). I tuoi salvataggi restano al loro posto."+(notes.isEmpty()?"":"\n\n"+notes)).setNegativeButton("Più tardi",null).setPositiveButton("Scarica",(d,w)->{downloadProgress=0;updateStatus="Preparazione del download…";invalidate();updater.beginDownload(info);}).show();
+        updatePrompts.show(new AlertDialog.Builder(activity).setTitle("Topperia "+info.versionName+" è pronta").setMessage("Puoi scaricare l’aggiornamento da GitHub ("+size+"). I tuoi salvataggi restano al loro posto."+(notes.isEmpty()?"":"\n\n"+notes)).setNegativeButton("Più tardi",null).setPositiveButton("Scarica",(d,w)->{downloadProgress=0;updateStatus="Preparazione del download…";invalidate();updater.beginDownload(info);}));
+        });
     }
-    private void offerInstall(UpdateInfo info){if(!updateWindowReady())return;new AlertDialog.Builder(activity).setTitle("Tutto pronto per aggiornare").setMessage("Topperia "+info.versionName+" è stata scaricata e verificata. Android ti chiederà conferma per installarla.").setNegativeButton("Più tardi",null).setPositiveButton("Installa",(d,w)->updater.installDownloaded()).show();}
+    private void offerInstall(UpdateInfo info){updatePrompts.post(()->updatePrompts.show(new AlertDialog.Builder(activity).setTitle("Tutto pronto per aggiornare").setMessage("Topperia "+info.versionName+" è stata scaricata e verificata. Android ti chiederà conferma per installarla.").setNegativeButton("Più tardi",null).setPositiveButton("Installa",(d,w)->updater.installDownloaded())));}
     private void updateAction(){if(updater.isBusy())return;if(updateReady){offerInstall(availableUpdate);return;}if(availableUpdate!=null){offerUpdate(availableUpdate);return;}manualUpdateCheck=true;updater.check(true);}
-    public void resume(){readMotionPreference();invalidate();updater.onResume();updater.check(false);}
-    public void pause(){stopScroll();clearPress();}
+    public void resume(){readMotionPreference();invalidate();updatePrompts.onResume();updater.onResume();updater.check(false);}
+    public void pause(){updatePrompts.onPause();stopScroll();clearPress();}
+    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);updatePrompts.onWindowFocusChanged(focused);}
 
     private float dp(float x){return x*getResources().getDisplayMetrics().density;}
     private boolean reduced(){return frameReduced;}
@@ -213,7 +217,7 @@ public final class TopperiaView extends ViewGroup {
     private String position(int index){return session.ranking.id.startsWith("skyscrapers")&&(index==7||index==8)?"8=":""+(index+1);}
     public void save(){android.content.SharedPreferences.Editor edit=store.prefs.edit();if(session!=null){edit.putString("session",session.serialize()).putString("ranking",session.ranking.id).putBoolean("recorded",recorded);}else{edit.remove("session").remove("ranking");}edit.apply();}
     private void restore(){String id=store.prefs.getString("ranking","");for(RankedList list:rankings)if(list.id.equals(id)){try{session=GameSession.restore(list,store.prefs.getString("session",""));recorded=store.prefs.getBoolean("recorded",false);}catch(RuntimeException ignored){session=null;}break;}}
-    public void dispose(){stopScroll();previousPage=null;shuffleGeneration++;queuedRanking=null;updater.close();if(tones!=null)tones.release();}
+    public void dispose(){updatePrompts.close();stopScroll();previousPage=null;shuffleGeneration++;queuedRanking=null;updater.close();if(tones!=null)tones.release();}
     public void goBack(){if(!modal.isEmpty()){closeSheet();}else if(screen.equals("onboarding")){if(onboardingStep>0)onboardingPage(onboardingStep-1);else if(onboardingReplay)finishOnboarding();else activity.finish();}else if(screen.equals("shuffle")){shuffleGeneration++;queuedRanking=null;show(shuffleReturn);}else if(screen.equals("game")){confirmExit();}else if(!screen.equals("home")){show("home");}else activity.finish();}
     private void confirmExit(){hideKeyboard();new AlertDialog.Builder(activity).setTitle("Una pausa dalla vetta?").setMessage("La partita viene salvata. Puoi riprenderla dalla home quando vuoi.").setNegativeButton("Continua",(d,w)->{}).setPositiveButton("Torna alla home",(d,w)->{save();show("home");}).show();}
     private void source(){RankedList r=session!=null?session.ranking:daily();new AlertDialog.Builder(activity).setTitle("Dati veri, curiosità vere.").setMessage(r.sourceName+" · "+r.referenceYear+"\n\n"+r.methodology+"\n\n"+r.sourceUrl).setNegativeButton("Chiudi",null).setPositiveButton("Apri la fonte",(d,w)->{try{activity.startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(r.sourceUrl)));}catch(Exception e){tell("Nessun browser disponibile.");}}).show();}
