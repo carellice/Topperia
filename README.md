@@ -45,6 +45,7 @@ Record, statistiche, preferenze e piccoli traguardi restano sul dispositivo. Nes
 - **Sorprendimi:** una scelta casuale animata che rispetta categoria e modalità, dà precedenza alle classifiche non completate ed evita ripetizioni durante il ciclo.
 - **Un benvenuto in tre scene:** spiega il gioco al primo avvio; puoi saltarlo e rivederlo dalle impostazioni.
 - **Grafica originale:** logo creato con ImageGen, avorio, bosco e lime, carte che si girano, una barra flottante e coriandoli per le tue scoperte.
+- **Movimenti curati:** passaggi tra pagine senza lampeggi, pannelli che scorrono e si chiudono anche trascinandoli, pulsanti e interruttori animati. Le classifiche scorrono con inerzia e disegnano soltanto le schede visibili.
 - **Controlli Android:** tastiera nativa, suoni, feedback aptico, controlli per l’accessibilità e animazioni ridotte.
 
 Il simbolo originale, il prompt e le informazioni sulla sua integrazione sono in [branding/](branding/README.md).

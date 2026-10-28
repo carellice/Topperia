@@ -1,5 +1,28 @@
 # Verifiche di Topperia
 
+## Animazioni e scorrimento — 1.1.4
+
+Verifica del 28 ottobre 2026 su un emulatore isolato Android 15 / API 35, 1080 × 2400, 420 dpi, con accelerazione GPU host.
+
+- Eliminata la dissolvenza della pagina entrante verso lo sfondo vuoto. Una registrazione della pagina uscente mantiene coperto il contenuto durante il passaggio; la barra di navigazione viene disegnata separatamente. Il campo di risposta nativo segue posizione e opacità della nuova pagina.
+- Impostazioni e regole conservano il proprio stato fino alla fine della chiusura. Verificati Indietro, pulsante, tocco sullo sfondo e trascinamento verso il basso; i controlli sottostanti restano esclusi durante il movimento.
+- Catalogo con `VelocityTracker` e `OverScroller`, arresto al tocco e cancellazione dell’inerzia quando cambia pagina, categoria o stato dell’app. Le righe fuori schermo non vengono impaginate né disegnate; testi adattati e spezzati su più righe sono memorizzati. Il ridisegno continuo è limitato alle animazioni visibili.
+- Nuovo feedback di pressione su pulsanti e schede, interruttori interpolati, tentativi animati, particelle sulle risposte corrette e comparsa/scomparsa dei messaggi. La preferenza Animazioni ridotte e la disattivazione delle animazioni di sistema evitano le transizioni.
+- Superati i test Java: **2.766** motore/catalogo, **925** estrazioni, **53** aggiornamenti e **424** controlli dei tempi/interpolazioni. Superate anche le **122** asserzioni della procedura di rilascio.
+- Superate **68 verifiche Android** con tocchi, gesti e tastiera reali: navigazione, assenza di frame vuoti, inerzia e arresto al tocco, pannelli e ritorno dopo un trascinamento breve, blocco dello scorrimento accessibile sotto i pannelli, animazioni ridotte, introduzione, categorie e una risposta corretta tramite il campo nativo. Nessuna eccezione Android fatale nei log.
+- Misurati 23 frame durante lo scorrimento: disegno Java mediano **1,28 ms**, percentile 95 **4,57 ms**; invio comandi mediano **2,43 ms**. Il tempo totale mediano dell’emulatore è **28,95 ms** (percentile 95 **36,82 ms**): questi dati non dimostrano 60 fps su un telefono fisico. Log completo insieme alle schermate di prova.
+
+Le prove dell’interfaccia sono ripetibili con `MotionInstrumentation`, senza dipendenze di test esterne:
+
+```powershell
+.\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest
+adb -s emulator-5562 install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5562 install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s emulator-5562 shell am instrument -w it.topperia.game.test/it.topperia.game.MotionInstrumentation
+```
+
+Usare un emulatore di prova isolato: il runner configura le preferenze del gioco per rendere ripetibili le verifiche. I tocchi sono eventi Android reali; i controlli vengono individuati dalle stesse aree usate dall’interfaccia e dall’accessibilità. Le immagini della sessione sono conservate in `output/screenshots-v1.1.4/`, esclusa da Git. Il collaudo non copre un telefono fisico o tutte le versioni Android supportate.
+
 ## Release 1.1.3 e aggiornamenti integrati
 
 Verifica del 28 ottobre 2026. Repository pubblica: [carellice/Topperia](https://github.com/carellice/Topperia). La release stabile [v1.1.3](https://github.com/carellice/Topperia/releases/tag/v1.1.3) contiene APK firmato, `update.json` e checksum SHA-256.

@@ -8,6 +8,8 @@ $sources += Join-Path $projectRoot 'tests/EngineTest.java'
 $sources += Join-Path $projectRoot 'tests/RankingPickerTest.java'
 $sources += Join-Path $projectRoot 'app/src/main/java/it/topperia/game/update/UpdatePolicy.java'
 $sources += Join-Path $projectRoot 'tests/UpdatePolicyTest.java'
+$sources += Join-Path $projectRoot 'app/src/main/java/it/topperia/game/ui/Motion.java'
+$sources += Join-Path $projectRoot 'tests/MotionTest.java'
 & javac -encoding UTF-8 --release 17 -d $classesPath @sources
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione dei test fallita.' }
 & java -ea -cp $classesPath EngineTest
@@ -16,3 +18,5 @@ if ($LASTEXITCODE -ne 0) { throw 'Verifica del motore fallita.' }
 if ($LASTEXITCODE -ne 0) { throw 'Verifica della selezione casuale fallita.' }
 & java -ea -cp $classesPath UpdatePolicyTest
 if ($LASTEXITCODE -ne 0) { throw 'Verifica della sicurezza degli aggiornamenti fallita.' }
+& java -ea -cp $classesPath MotionTest
+if ($LASTEXITCODE -ne 0) { throw 'Verifica delle animazioni fallita.' }

@@ -38,7 +38,7 @@ public final class MainActivity extends Activity {
         }
     }
 
-    @Override protected void onPause() { super.onPause(); game.save(); }
+    @Override protected void onPause() { super.onPause(); game.pause(); game.save(); }
     @Override protected void onResume() { super.onResume(); if (game != null) game.resume(); }
     @Override protected void onDestroy() { game.dispose(); super.onDestroy(); }
     // API 33+ uses the native OnBackInvokedDispatcher registered above.

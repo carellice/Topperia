@@ -22,12 +22,14 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.OverScroller;
 import it.topperia.game.data.Rankings;
 import it.topperia.game.engine.GameSession;
 import it.topperia.game.engine.RankedList;
 import it.topperia.game.engine.RankingPicker;
 import it.topperia.game.update.GitHubUpdater;
 import it.topperia.game.update.UpdateInfo;
+import it.topperia.game.ui.Motion;
 import java.util.*;
 
 /** A native, resolution-independent little game world with offline rounds. */
@@ -62,6 +64,24 @@ public final class TopperiaView extends ViewGroup {
     private int lastHit=-1;
     private final Random random=new Random();
     private final RankingPicker picker=new RankingPicker(random);
+    private final OverScroller scroller;
+    private final int touchSlop,minFling,maxFling;
+    private VelocityTracker velocity;
+    private int activePointer=-1;
+    private boolean scrollingGesture=false,sheetGesture=false,sheetClosing=false,capturing=false,frameReduced=false,frameAnimating=false;
+    private long frameTime,pageAt=0,sheetAt=0,pressAt=0,filterAt=0,toggleAt=0;
+    private Picture previousPage;
+    private float pageDirection=1,pageShift=0,sheetFrom=0,sheetTarget=0,sheetDrag=0;
+    private RectF pressedBounds;
+    private float pressRelease=1;
+    private String toggleKey="";
+    private float toggleFrom=0;
+    private final LinkedHashSet<String> categories=new LinkedHashSet<>();
+    private final HashMap<String,String[]> wrappedText=new HashMap<>();
+    private final HashMap<String,FittedText> fittedText=new HashMap<>();
+    private final Path iconPath=new Path(),starPath=new Path(),cupPath=new Path();
+    private LinearGradient dockGradient;
+    private float gradientHeight=-1;
     private int onboardingStep=0,shuffleGeneration=0;
     private String onboardingReturn="home",shuffleReturn="home";
     private boolean onboardingReplay=false;
@@ -72,6 +92,9 @@ public final class TopperiaView extends ViewGroup {
 
     public TopperiaView(Context context) {
         super(context); activity=(Activity)context; store=new GameStore(context); rankings=Rankings.all();
+        scroller=new OverScroller(context);
+        ViewConfiguration config=ViewConfiguration.get(context);touchSlop=config.getScaledTouchSlop();minFling=config.getScaledMinimumFlingVelocity();maxFling=config.getScaledMaximumFlingVelocity();
+        categories.add("Tutte");for(RankedList ranking:rankings)categories.add(ranking.category);
         BitmapFactory.Options logoOptions=new BitmapFactory.Options();logoOptions.inScaled=false;
         logo=BitmapFactory.decodeResource(getResources(),R.drawable.topperia_logo,logoOptions);
         setWillNotDraw(false); setFocusable(true); setFocusableInTouchMode(true);
@@ -116,13 +139,38 @@ public final class TopperiaView extends ViewGroup {
     }
     private void offerInstall(UpdateInfo info){if(!updateWindowReady())return;new AlertDialog.Builder(activity).setTitle("Tutto pronto per aggiornare").setMessage("Topperia "+info.versionName+" è stata scaricata e verificata. Android ti chiederà conferma per installarla.").setNegativeButton("Più tardi",null).setPositiveButton("Installa",(d,w)->updater.installDownloaded()).show();}
     private void updateAction(){if(updater.isBusy())return;if(updateReady){offerInstall(availableUpdate);return;}if(availableUpdate!=null){offerUpdate(availableUpdate);return;}manualUpdateCheck=true;updater.check(true);}
-    public void resume(){updater.onResume();updater.check(false);}
+    public void resume(){readMotionPreference();invalidate();updater.onResume();updater.check(false);}
+    public void pause(){stopScroll();clearPress();}
 
     private float dp(float x){return x*getResources().getDisplayMetrics().density;}
-    private boolean reduced(){return store.option("reduced",false) || android.provider.Settings.Global.getFloat(getContext().getContentResolver(),android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,1)==0;}
+    private boolean reduced(){return frameReduced;}
+    private void readMotionPreference(){frameReduced=store.option("reduced",false)||!android.animation.ValueAnimator.areAnimatorsEnabled();}
     private long now(){return SystemClock.uptimeMillis();}
-    private float anim(){return reduced()?0:(now()%100000)/1000f;}
-    private void show(String page){if(page.equals("home")||page.equals("library")||page.equals("profile")){navFrom=navPosition();navTarget=page.equals("home")?0:page.equals("library")?1:2;navAt=now();}screen=page;scroll=0;maxScroll=0;entered=now();modal="";accessibilityFocus=-1;hovered=-1;hideKeyboard();updateInput();requestLayout();invalidate();activity.setTitle("Topperia · "+(page.equals("home")?"Home":page.equals("library")?"Classifiche":page.equals("profile")?"Il tuo percorso":page.equals("results")?"Risultato":page.equals("onboarding")?"Benvenuto":page.equals("shuffle")?"Una sorpresa":"La tua scalata"));if(android.os.Build.VERSION.SDK_INT>=28)setAccessibilityPaneTitle(activity.getTitle());sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);}
+    private float anim(){return reduced()?0:(frameTime%100000)/1000f;}
+    private boolean dockPage(String page){return page.equals("home")||page.equals("library")||page.equals("profile");}
+    private int pageIndex(String page){return page.equals("home")?0:page.equals("library")?1:2;}
+    private void capturePage(){
+        if(capturing)return;
+        if(getWidth()==0||reduced()||((screen.equals("game")||screen.equals("results"))&&session==null)) {previousPage=null;return;}
+        Picture picture=new Picture();Canvas c=picture.beginRecording(400,(int)Math.ceil(H));c.drawColor(BG);
+        capturing=true;
+        try{
+            drawPageFrame(c);
+            c.save();c.scale(1/scale,1/scale);super.dispatchDraw(c);c.restore();
+            if(!modal.isEmpty())modal(c);
+        }finally{picture.endRecording();capturing=false;hitOffset=0;contentClip=false;}
+        previousPage=picture;
+    }
+    private void show(String page){
+        readMotionPreference();frameTime=now();capturePage();stopScroll();clearPress();
+        pageDirection=dockPage(screen)&&dockPage(page)?Math.signum(pageIndex(page)-pageIndex(screen)):page.equals("home")?-1:1;
+        if(pageDirection==0)pageDirection=1;
+        if(dockPage(page)){navFrom=navPosition();navTarget=pageIndex(page);navAt=now();}
+        screen=page;scroll=0;maxScroll=0;entered=pageAt=now();modal="";sheetClosing=false;sheetDrag=0;pageShift=0;
+        hits.clear();accessibilityFocus=-1;hovered=-1;hideKeyboard();updateInput();requestLayout();invalidate();
+        activity.setTitle("Topperia · "+(page.equals("home")?"Home":page.equals("library")?"Classifiche":page.equals("profile")?"Il tuo percorso":page.equals("results")?"Risultato":page.equals("onboarding")?"Benvenuto":page.equals("shuffle")?"Una sorpresa":"La tua scalata"));
+        if(android.os.Build.VERSION.SDK_INT>=28)setAccessibilityPaneTitle(activity.getTitle());sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);
+    }
     private float navPosition(){float t=reduced()?1:Math.min(1,(now()-navAt)/380f);return navFrom+(navTarget-navFrom)*(1-(float)Math.pow(1-t,3));}
     private void updateInput(){boolean visible=screen.equals("game")&&session!=null&&session.phase()==GameSession.Phase.PLAYING&&modal.isEmpty();input.setVisibility(visible?VISIBLE:GONE);submit.setVisibility(visible?VISIBLE:GONE);}
     private void hideKeyboard(){input.clearFocus();((InputMethodManager)activity.getSystemService(Context.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(getWindowToken(),0);}
@@ -142,7 +190,7 @@ public final class TopperiaView extends ViewGroup {
     }
     private void openOnboarding(){onboardingReturn=screen;onboardingReplay=true;onboardingStep=0;show("onboarding");}
     private void finishOnboarding(){store.prefs.edit().putBoolean("onboarding_complete",true).apply();show(onboardingReplay?onboardingReturn:"home");onboardingReplay=false;}
-    private void onboardingPage(int step){if(step>=3){finishOnboarding();return;}onboardingStep=Math.max(0,step);entered=now();accessibilityFocus=-1;hovered=-1;invalidate();sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);}
+    private void onboardingPage(int step){if(step>=3){finishOnboarding();return;}readMotionPreference();capturePage();pageDirection=step>onboardingStep?1:-1;onboardingStep=Math.max(0,step);entered=pageAt=now();clearPress();accessibilityFocus=-1;hovered=-1;invalidate();sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);}
     private void choose(GameSession.Mode mode){pendingMode=mode;filter="Tutte";show("library");}
     private RankedList daily(){long day=java.time.LocalDate.now(java.time.ZoneId.of("Europe/Rome")).toEpochDay();return rankings.get((int)Math.floorMod(day,rankings.size()));}
     private void guess(){
@@ -165,8 +213,8 @@ public final class TopperiaView extends ViewGroup {
     private String position(int index){return session.ranking.id.startsWith("skyscrapers")&&(index==7||index==8)?"8=":""+(index+1);}
     public void save(){android.content.SharedPreferences.Editor edit=store.prefs.edit();if(session!=null){edit.putString("session",session.serialize()).putString("ranking",session.ranking.id).putBoolean("recorded",recorded);}else{edit.remove("session").remove("ranking");}edit.apply();}
     private void restore(){String id=store.prefs.getString("ranking","");for(RankedList list:rankings)if(list.id.equals(id)){try{session=GameSession.restore(list,store.prefs.getString("session",""));recorded=store.prefs.getBoolean("recorded",false);}catch(RuntimeException ignored){session=null;}break;}}
-    public void dispose(){shuffleGeneration++;queuedRanking=null;updater.close();if(tones!=null)tones.release();}
-    public void goBack(){if(!modal.isEmpty()){modal="";updateInput();invalidate();}else if(screen.equals("onboarding")){if(onboardingStep>0)onboardingPage(onboardingStep-1);else if(onboardingReplay)finishOnboarding();else activity.finish();}else if(screen.equals("shuffle")){shuffleGeneration++;queuedRanking=null;show(shuffleReturn);}else if(screen.equals("game")){confirmExit();}else if(!screen.equals("home")){show("home");}else activity.finish();}
+    public void dispose(){stopScroll();previousPage=null;shuffleGeneration++;queuedRanking=null;updater.close();if(tones!=null)tones.release();}
+    public void goBack(){if(!modal.isEmpty()){closeSheet();}else if(screen.equals("onboarding")){if(onboardingStep>0)onboardingPage(onboardingStep-1);else if(onboardingReplay)finishOnboarding();else activity.finish();}else if(screen.equals("shuffle")){shuffleGeneration++;queuedRanking=null;show(shuffleReturn);}else if(screen.equals("game")){confirmExit();}else if(!screen.equals("home")){show("home");}else activity.finish();}
     private void confirmExit(){hideKeyboard();new AlertDialog.Builder(activity).setTitle("Una pausa dalla vetta?").setMessage("La partita viene salvata. Puoi riprenderla dalla home quando vuoi.").setNegativeButton("Continua",(d,w)->{}).setPositiveButton("Torna alla home",(d,w)->{save();show("home");}).show();}
     private void source(){RankedList r=session!=null?session.ranking:daily();new AlertDialog.Builder(activity).setTitle("Dati veri, curiosità vere.").setMessage(r.sourceName+" · "+r.referenceYear+"\n\n"+r.methodology+"\n\n"+r.sourceUrl).setNegativeButton("Chiudi",null).setPositiveButton("Apri la fonte",(d,w)->{try{activity.startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(r.sourceUrl)));}catch(Exception e){tell("Nessun browser disponibile.");}}).show();}
     private void editNames(){LinearLayout fields=new LinearLayout(activity);fields.setOrientation(LinearLayout.VERTICAL);int pad=(int)dp(22);fields.setPadding(pad,pad,pad,0);EditText first=new EditText(activity),second=new EditText(activity);first.setSingleLine();second.setSingleLine();first.setHint("Giocatore o squadra 1");second.setHint("Giocatore o squadra 2");first.setText(store.prefs.getString("player1","Giocatore 1"));second.setText(store.prefs.getString("player2","Giocatore 2"));first.setFilters(new InputFilter[]{new InputFilter.LengthFilter(16)});second.setFilters(new InputFilter[]{new InputFilter.LengthFilter(16)});fields.addView(first);fields.addView(second);new AlertDialog.Builder(activity).setTitle("Chi sfida chi?").setView(fields).setNegativeButton("Annulla",null).setPositiveButton("Pronti!",(d,w)->{String a=first.getText().toString().trim(),b=second.getText().toString().trim();store.prefs.edit().putString("player1",a.isEmpty()?"Giocatore 1":a).putString("player2",b.isEmpty()?"Giocatore 2":b).apply();invalidate();}).show();}
@@ -175,28 +223,70 @@ public final class TopperiaView extends ViewGroup {
     @Override protected void onLayout(boolean changed,int l,int t,int r,int b){float y=H-82;inputY=y;input.layout((int)(38*scale),(int)((y+7)*scale),(int)(296*scale),(int)((y+59)*scale));submit.layout((int)(318*scale),(int)((y+7)*scale),(int)(370*scale),(int)((y+59)*scale));}
 
     @Override protected void onDraw(Canvas raw){
-        super.onDraw(raw);Canvas c=raw;c.save();c.scale(scale,scale);c.drawColor(BG);hits.clear();hitOffset=0;contentClip=false;
+        super.onDraw(raw);frameTime=now();readMotionPreference();frameAnimating=false;
+        if(reduced()){previousPage=null;if(!scroller.isFinished())scroller.abortAnimation();}
+        if(!modal.isEmpty()&&sheetClosing&&sheetProgress()<=0){modal="";sheetClosing=false;sheetDrag=0;updateInput();sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);}
+        Canvas c=raw;c.save();c.scale(scale,scale);c.drawColor(BG);hits.clear();hitOffset=0;contentClip=false;
         String summary=screen.equals("home")?"Topperia. Il mondo è una Top 10. Scegli una sfida.":screen.equals("library")?"Scegli una classifica. Modalità "+(pendingMode==GameSession.Mode.DUEL?"due giocatori":"solitaria"):screen.equals("profile")?"Il tuo percorso. Record "+store.number("best")+" su 10. "+store.number("rounds")+" partite.":screen.equals("onboarding")?"Benvenuto in Topperia. Introduzione, pagina "+(onboardingStep+1)+" di 3.":screen.equals("shuffle")?"Scelgo una classifica casuale per te.":"Topperia";
-        setContentDescription(summary);
-        float entrance=reduced()?1:Math.min(1,(now()-entered)/320f);
-        float ease=1-(float)Math.pow(1-entrance,3);
-        c.saveLayerAlpha(0,0,400,H,(int)(255*Math.min(1,entrance*2)));c.translate(0,(1-ease)*14);
-        switch(screen){case "onboarding":onboarding(c);break;case "shuffle":shuffle(c);break;case "home":home(c);break;case "library":library(c);break;case "profile":profile(c);break;case "game":game(c);break;case "results":results(c);break;}
-        c.restore();
+        if(!summary.contentEquals(getContentDescription()==null?"":getContentDescription()))setContentDescription(summary);
+        drawPageFrame(c);
+        float nativeProgress=previousPage==null?1:Motion.ease(Motion.progress(now(),pageAt,340));
+        input.setTranslationX(pageShift*scale);submit.setTranslationX(pageShift*scale);
+        input.setAlpha(nativeProgress);submit.setAlpha(nativeProgress);input.setEnabled(nativeProgress>.8f);submit.setEnabled(nativeProgress>.8f);
+        if(dockPage(screen))nav(c,screen);
         if(!modal.isEmpty())modal(c);
         if(!notice.isEmpty()&&now()-noticeAt<2900&&modal.isEmpty()){
             float y=screen.equals("game")?Math.max(208,H-124):H-112;
-            rect(c,22,y,356,42,15,INK);center(c,notice,200,y+26,12,WHITE,bold);
+            float age=now()-noticeAt,t=reduced()?1:Math.min(Motion.ease(age/220f),Motion.ease((2900-age)/240f));
+            c.save();c.translate(0,(1-t)*12);c.saveLayerAlpha(22,y,378,y+42,(int)(255*t));
+            rect(c,22,y,356,42,15,INK);center(c,notice,200,y+26,12,WHITE,bold);c.restore();c.restore();if(reduced())postInvalidateDelayed((long)(2900-age)+1);else frameAnimating=true;
         }
+        drawPress(c);
         c.restore();
-        if(isShown()&&getWindowVisibility()==VISIBLE&&(!reduced()||now()-noticeAt<3000||now()-entered<600))postInvalidateOnAnimation();
+        if(isShown()&&getWindowVisibility()==VISIBLE&&frameAnimating)postInvalidateOnAnimation();
+    }
+
+    // The incoming page stays opaque. Only the retained outgoing content fades,
+    // so a navigation frame can never expose an empty background or blink the dock.
+    private void drawPageFrame(Canvas c){
+        float t=reduced()?1:Motion.ease(Motion.progress(now(),pageAt,340));
+        pageShift=previousPage==null?0:pageDirection*18*(1-t);
+        c.save();if(dockPage(screen))c.clipRect(0,0,400,H-DOCK_SPACE);
+        c.save();c.translate(pageShift,0);drawPage(c);c.restore();
+        if(previousPage!=null&&t<1){
+            int layer=c.saveLayerAlpha(0,0,400,H,(int)(255*(1-t)));
+            c.translate(-pageDirection*10*t,0);c.drawPicture(previousPage);c.restoreToCount(layer);frameAnimating=true;
+        }else if(!capturing)previousPage=null;
+        c.restore();
+    }
+    private void drawPage(Canvas c){switch(screen){case "onboarding":onboarding(c);break;case "shuffle":shuffle(c);break;case "home":home(c);break;case "library":library(c);break;case "profile":profile(c);break;case "game":game(c);break;case "results":results(c);break;}}
+    @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){super.onSizeChanged(w,h,oldw,oldh);previousPage=null;stopScroll();}
+    @Override protected void onDetachedFromWindow(){stopScroll();previousPage=null;super.onDetachedFromWindow();}
+    @Override public void computeScroll(){if(scroller.computeScrollOffset()){scroll=Math.max(0,Math.min(maxScroll,scroller.getCurrY()/scale));postInvalidateOnAnimation();}}
+
+    private void stopScroll(){scroller.abortAnimation();if(velocity!=null){velocity.recycle();velocity=null;}activePointer=-1;scrollingGesture=false;}
+    private float sheetProgress(){return reduced()?sheetTarget:Motion.lerp(sheetFrom,sheetTarget,Motion.ease(Motion.progress(now(),sheetAt,sheetClosing?240:360)));}
+    private float sheetHeight(){return modal.equals("settings")?565:482;}
+    private float sheetTop(){return Math.max(20,H-sheetHeight())+(1-sheetProgress())*sheetHeight()+sheetDrag;}
+    private void openSheet(String name){readMotionPreference();stopScroll();clearPress();modal=name;sheetFrom=0;sheetTarget=1;sheetAt=now();sheetDrag=0;sheetClosing=false;hits.clear();accessibilityFocus=hovered=-1;hideKeyboard();updateInput();invalidate();sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);}
+    private void closeSheet(){if(modal.isEmpty()||sheetClosing)return;sheetFrom=Math.max(0,sheetProgress()-sheetDrag/sheetHeight());sheetTarget=0;sheetAt=now();sheetClosing=true;sheetDrag=0;clearPress();invalidate();}
+    private void clearPress(){pressedBounds=null;pressRelease=1;}
+    private void releasePress(){if(pressedBounds!=null){pressAt=now();pressRelease=0;invalidate();}}
+    private void drawPress(Canvas c){
+        if(pressedBounds==null||reduced())return;
+        float t=pressRelease==0?Motion.progress(now(),pressAt,220):0;
+        if(pressRelease==0&&t>=1){clearPress();return;}
+        float strength=pressRelease==0?1-Motion.ease(t):Motion.ease(Motion.progress(now(),pressAt,100));
+        RectF b=pressedBounds;stroke(c,b.left+2,b.top+2,b.width()-4,b.height()-4,18,(Math.round(48*strength)<<24)|(INK&0xffffff),2);
+        if(pressRelease==0||now()-pressAt<100)frameAnimating=true;
     }
 
     private void pageStart(Canvas c){c.save();c.clipRect(0,0,400,H-DOCK_SPACE);c.translate(0,-scroll);hitOffset=-scroll;contentClip=true;}
     private void pageEnd(Canvas c,float height){c.restore();hitOffset=0;contentClip=false;maxScroll=Math.max(0,height-(H-DOCK_SPACE));scroll=Math.min(scroll,maxScroll);}
-    private void header(Canvas c){brand(c,25,38,1);circle(c,353,31,21,WHITE);icon(c,"settings",343,21,20,INK);hit(328,7,50,49,"Impostazioni",()->{modal="settings";updateInput();invalidate();});}
+    private void header(Canvas c){brand(c,25,38,1);circle(c,353,31,21,WHITE);icon(c,"settings",343,21,20,INK);hit(328,7,50,49,"Impostazioni",()->openSheet("settings"));}
 
     private void onboarding(Canvas c){
+        if(!reduced())frameAnimating=true;
         maxScroll=0;brand(c,25,40,.91f);pill(c,onboardingReplay?"Chiudi":"Salta",311,14,65,36,0xffeeefe6,MUTED,12);hit(305,9,76,47,"Salta introduzione",this::finishOnboarding);
         for(int i=0;i<3;i++)rect(c,25+i*49,74,40,4,2,i<=onboardingStep?GREEN:0xffdfe5d5);
         text(c,"0"+(onboardingStep+1)+" / 03",328,80,10,MUTED,bold);
@@ -252,6 +342,7 @@ public final class TopperiaView extends ViewGroup {
     }
 
     private void shuffle(Canvas c){
+        if(!reduced())frameAnimating=true;
         maxScroll=0;circle(c,43,30,20,WHITE);icon(c,"back",33,20,20,INK);hit(20,7,46,48,"Annulla scelta casuale",this::goBack);brand(c,147,37,.8f);
         float cy=H*.42f,t=reduced()?1:Math.min(1,(now()-entered)/1650f);
         circle(c,200,cy,112,0xffedf1e2);
@@ -268,7 +359,7 @@ public final class TopperiaView extends ViewGroup {
         text(c,"Quanto in alto riesci ad arrivare?",25,201,15,MUTED,regular);
         hero(c,24,224,352,196);
         float y=444;
-        text(c,"Scegli la tua sfida",25,y,20,INK,bold);pill(c,"COME SI GIOCA",267,y-19,108,24,0x00000000,MUTED,9);hit(260,y-25,119,36,"Come si gioca",()->{modal="rules";updateInput();invalidate();});
+        text(c,"Scegli la tua sfida",25,y,20,INK,bold);pill(c,"COME SI GIOCA",267,y-19,108,24,0x00000000,MUTED,9);hit(260,y-25,119,36,"Come si gioca",()->openSheet("rules"));
         y+=18;
         actionCard(c,24,y,352,83,LIME,"solo","In solitaria","Tu, 10 tentativi e un po’ d’intuito.",()->choose(GameSession.Mode.SOLO));
         y+=95;
@@ -281,10 +372,11 @@ public final class TopperiaView extends ViewGroup {
         text(c,"LA CURIOSITÀ DEL GIORNO",25,y,10,MUTED,bold);y+=14;
         RankedList day=daily();rect(c,24,y,352,95,20,WHITE);iconBadge(c,day.icon,40,y+20,48,0xffeef0e5);wrap(c,day.title,103,y+28,248,16,21,INK,bold,2);text(c,day.category+"  ·  "+day.referenceYear,103,y+77,11,MUTED,regular);hit(24,y,352,95,"Gioca: "+day.title,()->{pendingMode=GameSession.Mode.SOLO;start(day);});
         y+=119;text(c,"Dati reali. Risposte sorprendenti. Zero fretta.",25,y,11,MUTED,regular);
-        pageEnd(c,y+23);nav(c,"home");
+        pageEnd(c,y+23);
     }
 
     private void hero(Canvas c,float x,float y,float w,float h){
+        if(c.quickReject(x,y,x+w,y+h,Canvas.EdgeType.AA))return;
         rect(c,x,y+4,w,h,28,0xffe7ebdc);rect(c,x,y,w,h,28,GREEN);
         c.save();c.clipRect(x,y,x+w,y+h);
         for(int i=0;i<13;i++)for(int j=0;j<7;j++)circle(c,x+12+i*28,y+12+j*29,1,0x234f8059);
@@ -301,24 +393,29 @@ public final class TopperiaView extends ViewGroup {
         text(c,"La prossima Top 10?",23,132,31,INK,heavy);
         if(pendingMode==GameSession.Mode.DUEL){fit(c,store.prefs.getString("player1","Giocatore 1")+" vs "+store.prefs.getString("player2","Giocatore 2")+"  ✎",25,162,350,14,GREEN,bold);hit(24,140,352,35,"Personalizza giocatori o squadre",this::editNames);}else text(c,"Scegli un mondo. Mettiti alla prova.",25,162,14,MUTED,regular);
         float cy=183;
-        LinkedHashSet<String> cats=new LinkedHashSet<>();cats.add("Tutte");for(RankedList r:rankings)cats.add(r.category);
-        float cx=24;for(String category:cats){float w=measure(category,11,bold)+26;if(cx+w>379){cx=24;cy+=38;}pill(c,category,cx,cy,w,30,filter.equals(category)?INK:0xffeeefe7,filter.equals(category)?WHITE:MUTED,11);final String choice=category;hit(cx,cy,w,30,"Categoria "+category,()->{filter=choice;scroll=0;invalidate();});cx+=w+7;}
+        float cx=24;for(String category:categories){float w=measure(category,11,bold)+26;if(cx+w>379){cx=24;cy+=38;}pill(c,category,cx,cy,w,30,filter.equals(category)?INK:0xffeeefe7,filter.equals(category)?WHITE:MUTED,11);final String choice=category;hit(cx,cy,w,30,"Categoria "+category,()->{if(!filter.equals(choice)){stopScroll();filter=choice;scroll=0;filterAt=now();accessibilityFocus=hovered=-1;invalidate();sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);}});cx+=w+7;}
         float y=cy+46;
         rect(c,24,y,352,77,21,LIME);text(c,"Sorprendimi",42,y+30,19,INK,heavy);text(c,filter.equals("Tutte")?"Una Top 10 a caso. Il resto lo fai tu.":"Una sorpresa nella categoria "+filter+".",42,y+53,11,INK,regular);
-        c.save();c.translate(332,y+38);c.rotate((float)Math.sin(anim()*1.4f)*7);dice(c,-22,-22,44,INK,LIME,5);c.restore();
+        if(!c.quickReject(310,y,354,y+77,Canvas.EdgeType.AA)){if(!reduced())frameAnimating=true;c.save();c.translate(332,y+38);c.rotate((float)Math.sin(anim()*1.4f)*7);dice(c,-22,-22,44,INK,LIME,5);c.restore();}
         hit(24,y,352,77,"Classifica casuale: "+filter,()->randomRound(filter));y+=103;
         int visibleCount=0;for(RankedList r:rankings)if(filter.equals("Tutte")||r.category.equals(filter))visibleCount++;
         text(c,String.format(Locale.ITALIAN,"%02d CLASSIFICHE · 10 TENTATIVI CIASCUNA",visibleCount),25,y-5,9.5f,MUTED,bold);y+=12;
-        for(int i=0;i<rankings.size();i++){
+        int drawn=0;for(int i=0;i<rankings.size();i++){
             RankedList r=rankings.get(i);if(!filter.equals("Tutte")&&!filter.equals(r.category))continue;
-            int accent=new int[]{LIME,LILAC,ORANGE,0xffc8e5da}[i%4];
+            // Clipping alone still measures every title and constructs every icon.
+            // Skip all row work until its bounds actually enter the viewport.
+            if(y+139<scroll||y-scroll>H-DOCK_SPACE){y+=140;continue;}
+            float offset=reduced()?0:12*(1-Motion.ease(Motion.progress(now(),Math.max(filterAt,pageAt)+Math.min(drawn++,4)*28,320)));
+            if(offset>0)frameAnimating=true;c.save();c.translate(0,offset);hitOffset+=offset;
+            pressTransform(c,24,y,352,127);
+            int accent=i%4==0?LIME:i%4==1?LILAC:i%4==2?ORANGE:0xffc8e5da;
             rect(c,24,y,352,127,21,WHITE);iconBadge(c,r.icon,40,y+17,43,accent);
             text(c,r.category.toUpperCase(Locale.ITALIAN),97,y+29,9,MUTED,bold);if(store.option("played_"+r.id,false)){text(c,"✓ GIOCATA",293,y+29,8,GREEN,bold);}
             wrap(c,r.title,97,y+54,254,17,22,INK,bold,2);
             fit(c,r.referenceYear+"  ·  "+r.sourceName,41,y+108,292,10,MUTED,regular);chevron(c,350,y+105);
-            hit(24,y,352,127,"Gioca: "+r.title,()->start(r));y+=140;
+            c.restore();hit(24,y,352,127,"Gioca: "+r.title,()->start(r));c.restore();hitOffset-=offset;y+=140;
         }
-        text(c,"Ogni classifica racconta dati di un anno preciso.",25,y+8,10,MUTED,regular);pageEnd(c,y+36);nav(c,"library");
+        text(c,"Ogni classifica racconta dati di un anno preciso.",25,y+8,10,MUTED,regular);pageEnd(c,y+36);
     }
 
     private void profile(Canvas c){
@@ -331,14 +428,14 @@ public final class TopperiaView extends ViewGroup {
         achievement(c,y,"A metà del cielo","Trova almeno 5 risposte in un round",store.number("best")>=5,"star");y+=83;
         achievement(c,y,"Cima perfetta","Scopri una Top 10 completa",store.number("best")==10,"trophy");y+=83;
         achievement(c,y,"Due menti, una sfida","Completa una partita 1 contro 1",store.number("duels")>=1,"duel");y+=105;
-        pill(c,"COME SI GIOCA",25,y,157,40,0xffeeefe7,INK,11);hit(25,y,157,40,"Come si gioca",()->{modal="rules";updateInput();invalidate();});
-        pageEnd(c,y+64);nav(c,"profile");
+        pill(c,"COME SI GIOCA",25,y,157,40,0xffeeefe7,INK,11);hit(25,y,157,40,"Come si gioca",()->openSheet("rules"));
+        pageEnd(c,y+64);
     }
     private void stat(Canvas c,float x,float y,float w,String number,String label){rect(c,x,y,w,98,20,WHITE);center(c,number,x+w/2,y+43,28,INK,heavy);center(c,label,x+w/2,y+72,9,MUTED,bold);}
     private void achievement(Canvas c,float y,String title,String detail,boolean unlocked,String symbol){rect(c,24,y,352,72,18,unlocked?0xffedf2dd:0xffeeefe8);iconBadge(c,symbol,38,y+14,43,unlocked?LIME:0xffe0e3d8);text(c,title,96,y+30,15,unlocked?INK:MUTED,bold);text(c,detail,96,y+50,10.5f,MUTED,regular);if(unlocked)text(c,"✓",347,y+39,17,GREEN,bold);}
 
     private void game(Canvas c){
-        if(session==null){show("home");return;}
+        if(session==null)return;
         maxScroll=0;scroll=0;
         circle(c,43,30,20,WHITE);icon(c,"back",33,20,20,INK);hit(20,7,46,48,"Esci dalla partita",this::confirmExit);
         brand(c,147,37,.8f);circle(c,357,30,20,WHITE);icon(c,"info",347,20,20,INK);hit(333,7,47,48,"Fonte della classifica",this::source);
@@ -349,7 +446,8 @@ public final class TopperiaView extends ViewGroup {
         float progressY=keyboard?150:216;
         String who=session.mode==GameSession.Mode.DUEL?session.currentPlayer().name:"La tua scalata";
         text(c,who,25,progressY,12,INK,bold);text(c,session.currentPlayer().score()+" / 10 scoperte",257,progressY,12,GREEN,bold);
-        int used=session.currentPlayer().attemptsUsed();for(int i=0;i<10;i++){float x=25+i*19;rect(c,x,progressY+13,13,5,2.5f,i<used?GREEN:0xffdfe4d5);}
+        int used=session.currentPlayer().attemptsUsed();for(int i=0;i<10;i++){float x=25+i*19;float pulse=!reduced()&&i==used-1?1+(float)Math.sin(Math.PI*Motion.progress(now(),lastSubmissionAt,380))*.6f:1;c.save();c.scale(1,pulse,x+6.5f,progressY+15.5f);rect(c,x,progressY+13,13,5,2.5f,i<used?GREEN:0xffdfe4d5);c.restore();}
+        if(!reduced()&&now()-lastSubmissionAt<1000)frameAnimating=true;
         text(c,(10-used)+" tentativi",267,progressY+20,11,MUTED,regular);
         float boardY=progressY+38;
         read(24,64,352,progressY-59,r.title+". "+r.subtitle+". "+who+". "+session.currentPlayer().score()+" risposte trovate su 10. "+(10-used)+" tentativi rimasti.");
@@ -363,7 +461,8 @@ public final class TopperiaView extends ViewGroup {
             boolean reveal=found||(done&&(reduced()||elapsed>0));
             int fill=found?LIME:(reveal?0xffeceee2:WHITE);
             float flip=1;
-            if(!reduced()&&found&&reveals[i]>0){float t=Math.min(1,(now()-reveals[i])/450f);flip=Math.abs((float)Math.cos(t*Math.PI));if(t<.48f)fill=WHITE;}
+            if(!reduced()&&found&&reveals[i]>0){float t=Math.min(1,(now()-reveals[i])/450f);flip=Math.abs((float)Math.cos(t*Math.PI));if(t<.48f)fill=WHITE;if(t<1)frameAnimating=true;}
+            if(!reduced()&&done&&elapsed<1)frameAnimating=true;
             c.save();c.translate(x+85.5f,y+tileH/2);c.scale(Math.max(.06f,flip),1);c.translate(-85.5f,-tileH/2);
             rect(c,0,2,171,tileH,16,0xffe7e9df);rect(c,0,0,171,tileH,16,fill);
             if(reveal){
@@ -375,6 +474,7 @@ public final class TopperiaView extends ViewGroup {
                 line(c,56,tileH/2,133,tileH/2,0xffe0e5d9,3);circle(c,147,tileH/2,3,0xffe0e5d9);
             }
             c.restore();
+            if(!reduced()&&found&&i==lastHit){float burst=Motion.progress(now(),reveals[i],850);if(burst<1){frameAnimating=true;for(int j=0;j<7;j++){double angle=j*Math.PI*2/7;float distance=12+Motion.ease(burst)*30;circle(c,x+85.5f+(float)Math.cos(angle)*distance,y+tileH/2+(float)Math.sin(angle)*distance,2*(1-burst),j%2==0?GREEN:ORANGE);}}}
             read(x,y,171,tileH,reveal?"Posizione "+position(i)+". "+r.entries.get(i).name+". "+r.entries.get(i).value+(found?". Trovata.":". Svelata alla fine."):"Posizione "+(i+1)+". Ancora da scoprire.");
         }
         if(session.phase()==GameSession.Phase.PLAYING){
@@ -388,20 +488,20 @@ public final class TopperiaView extends ViewGroup {
     }
 
     private void handoff(Canvas c){
-        c.drawColor(BG);hits.clear();circle(c,43,30,20,WHITE);icon(c,"back",33,20,20,INK);hit(20,7,46,48,"Metti in pausa la sfida",this::confirmExit);float cy=Math.max(115,H/2-135);
+        c.drawColor(BG);if(!capturing)hits.clear();circle(c,43,30,20,WHITE);icon(c,"back",33,20,20,INK);hit(20,7,46,48,"Metti in pausa la sfida",this::confirmExit);float cy=Math.max(115,H/2-135);
         iconBadge(c,"duel",161,cy,78,LILAC);center(c,"Cambio di mente!",200,cy+120,29,INK,heavy);
         center(c,"Passa il telefono a",200,cy+154,15,MUTED,regular);center(c,session.player(1).name,200,cy+185,24,INK,bold);
         center(c,"Stessa classifica. Dieci nuovi tentativi.",200,cy+225,13,MUTED,regular);
         center(c,"Le risposte si sveleranno alla fine.",200,cy+248,12,MUTED,regular);
         read(24,cy+86,352,177,"Cambio di mente. Passa il telefono a "+session.player(1).name+". Stessa classifica, dieci nuovi tentativi. Le risposte si sveleranno alla fine.");
-        button(c,"Sono pronto, si gioca!",24,Math.min(H-90,cy+290),352,57,INK,WHITE,()->{session.startSecondPlayer();Arrays.fill(reveals,0);finishedAt=0;input.setText("");updateInput();requestLayout();save();invalidate();});
+        button(c,"Sono pronto, si gioca!",24,Math.min(H-90,cy+290),352,57,INK,WHITE,()->{capturePage();session.startSecondPlayer();pageAt=entered=now();Arrays.fill(reveals,0);finishedAt=0;input.setText("");updateInput();requestLayout();save();invalidate();});
     }
 
     private void results(Canvas c){
-        if(session==null){show("home");return;}
+        if(session==null)return;
         pageStart(c);brand(c,25,38,1);pill(c,"PARTITA COMPLETATA",228,16,148,28,0xffeaf0dd,GREEN,9);
         c.save();c.translate(200,119);trophy(c,0,0,LIME);c.restore();
-        if(!reduced()){for(int i=0;i<20;i++){float x=(i*83+13)%390,y=64+(i*47)%123+(float)Math.sin(anim()+i)*6; c.save();c.rotate(i*27,x,y);rect(c,x,y,4,8,1,new int[]{LILAC,LIME,ORANGE}[i%3]);c.restore();}}
+        if(!reduced()&&scroll<200){frameAnimating=true;for(int i=0;i<20;i++){float x=(i*83+13)%390,y=64+(i*47)%123+(float)Math.sin(anim()+i)*6; c.save();c.rotate(i*27+anim()*5,x,y);rect(c,x,y,4,8,1,i%3==0?LILAC:i%3==1?LIME:ORANGE);c.restore();}}
         boolean duel=session.mode==GameSession.Mode.DUEL;int score=session.player(0).score();
         String headline=duel?(session.winnerIndex()<0?"Una sfida alla pari!":session.player(session.winnerIndex()).name+" vince!"):(score==10?"Sei sulla vetta!":score>=7?"Che bella scalata!":score>=4?"L’intuito c’è!":"La curiosità vince sempre.");
         centerFit(c,headline,200,218,350,29,INK,heavy);
@@ -421,14 +521,17 @@ public final class TopperiaView extends ViewGroup {
         }
         y+=12;text(c,session.ranking.sourceName+" · "+session.ranking.referenceYear,25,y,11,MUTED,bold);y+=22;wrap(c,session.ranking.methodology,25,y,350,11,17,MUTED,regular,4);y+=80;
         pill(c,"CONSULTA LA FONTE ↗",24,y,352,42,0xffeeefe6,INK,10);hit(24,y,352,42,"Consulta la fonte dei dati",this::source);y+=60;
-        button(c,"Un’altra Top 10",24,y,352,57,INK,WHITE,()->{pendingMode=session.mode;choose(pendingMode);});y+=71;button(c,"Torna alla home",24,y,352,48,0xffeeefe6,INK,()->{session=null;save();show("home");});
+        button(c,"Un’altra Top 10",24,y,352,57,INK,WHITE,()->{pendingMode=session.mode;choose(pendingMode);});y+=71;button(c,"Torna alla home",24,y,352,48,0xffeeefe6,INK,()->{show("home");session=null;save();});
         pageEnd(c,y+70);
         // Results have their own sticky navigation, leaving the answers as a scrollable keepsake.
         rect(c,0,H-83,400,83,0,BG);line(c,24,H-83,376,H-83,LINE,1);button(c,"Un’altra Top 10  →",24,H-66,352,48,INK,WHITE,()->choose(session.mode));
     }
 
     private void nav(Canvas c,String active){
-        p.setStyle(Paint.Style.FILL);p.setShader(new LinearGradient(0,H-138,0,H-103,0x00f8f7f0,BG,Shader.TileMode.CLAMP));c.drawRect(0,H-138,400,H-103,p);p.setShader(null);
+        float contentShift=pageShift;pageShift=0;
+        if(gradientHeight!=H){gradientHeight=H;dockGradient=new LinearGradient(0,H-138,0,H-103,0x00f8f7f0,BG,Shader.TileMode.CLAMP);}
+        if(!reduced()&&now()-navAt<380)frameAnimating=true;
+        p.setStyle(Paint.Style.FILL);p.setShader(dockGradient);c.drawRect(0,H-138,400,H-103,p);p.setShader(null);
         float y=H-90;
         rect(c,29,y+11,342,71,31,0x09183b32);rect(c,26,y+6,348,72,32,0x12183b32);rect(c,24,y,352,72,31,INK);
         stroke(c,25,y+1,350,70,30,0x264f7562,1);
@@ -440,13 +543,16 @@ public final class TopperiaView extends ViewGroup {
             icon(c,symbols[i],x-10,y+17,20,color);center(c,labels[i],x,y+57,9.5f,color,bold);
             final String page=pages[i];hit(34+slot*i,y+4,slot,64,labels[i]+(active.equals(page)?", selezionata":""),()->{if(!screen.equals(page))show(page);});
         }
+        pageShift=contentShift;
     }
     private int blend(int a,int b,float t){return Color.rgb((int)(Color.red(a)+(Color.red(b)-Color.red(a))*t),(int)(Color.green(a)+(Color.green(b)-Color.green(a))*t),(int)(Color.blue(a)+(Color.blue(b)-Color.blue(a))*t));}
 
     private void modal(Canvas c){
-        c.drawColor(0x880d241a);hits.clear();float height=modal.equals("settings")?565:482;float y=Math.max(20,H-height);
+        float progress=sheetProgress();if(!reduced()&&Motion.progress(now(),sheetAt,sheetClosing?240:360)<1)frameAnimating=true;
+        c.drawColor((Math.round(136*progress*(1-Math.min(.7f,sheetDrag/sheetHeight())))<<24)|0x0d241a);
+        if(!capturing)hits.clear();pageShift=0;float y=sheetTop();
         rect(c,0,y,400,H-y+30,30,BG);rect(c,178,y+10,44,4,2,0xffcbd2c3);
-        circle(c,355,y+45,17,0xffeeefe6);text(c,"×",348,y+51,23,INK,regular);hit(328,y+22,51,45,"Chiudi",()->{modal="";updateInput();invalidate();});
+        circle(c,355,y+45,17,0xffeeefe6);text(c,"×",348,y+51,23,INK,regular);hit(328,y+22,51,45,"Chiudi",this::closeSheet);
         if(modal.equals("settings")){
             text(c,"Come piace a te.",25,y+65,27,INK,heavy);text(c,"Piccoli dettagli, una bella partita.",25,y+94,13,MUTED,regular);
             setting(c,y+122,"Suoni","Una nota per ogni scoperta", "sound",true);setting(c,y+192,"Vibrazione","Senti quando ci hai preso", "haptic",true);setting(c,y+262,"Animazioni ridotte","Un’esperienza più tranquilla", "reduced",false);
@@ -459,11 +565,17 @@ public final class TopperiaView extends ViewGroup {
             rule(c,y+208,2,"Scopri il tuo posto","Se c’è, la casella si gira. Ogni risposta nuova usa un tentativo.");
             rule(c,y+287,3,"Arriva più in alto","Dopo 10 tentativi scopri tutte le risposte. Vince chi ne trova di più.");
             text(c,"Ripetizioni e risposte vuote non consumano tentativi.",25,y+380,10,MUTED,regular);
-            button(c,"Ci sono, giochiamo!",24,y+405,352,53,INK,WHITE,()->{modal="";updateInput();invalidate();});
+            button(c,"Ci sono, giochiamo!",24,y+405,352,53,INK,WHITE,this::closeSheet);
         }
     }
     private void rule(Canvas c,float y,int n,String title,String body){circle(c,44,y+20,19,n==2?LILAC:LIME);center(c,""+n,44,y+25,16,INK,bold);text(c,title,78,y+16,16,INK,bold);wrap(c,body,78,y+39,292,12,17,MUTED,regular,2);}
-    private void setting(Canvas c,float y,String title,String desc,String key,boolean fallback){text(c,title,25,y+21,16,INK,bold);text(c,desc,25,y+43,11,MUTED,regular);boolean on=store.option(key,fallback);rect(c,320,y+5,54,30,15,on?GREEN:0xffdce2d4);circle(c,on?359:335,y+20,11,WHITE);hit(20,y-4,359,63,title+(on?", attivo":", disattivo"),()->{store.toggle(key,fallback);invalidate();});}
+    private float switchPosition(String key,boolean fallback){float target=store.option(key,fallback)?1:0;return !reduced()&&toggleKey.equals(key)?Motion.lerp(toggleFrom,target,Motion.ease(Motion.progress(now(),toggleAt,240))):target;}
+    private void setting(Canvas c,float y,String title,String desc,String key,boolean fallback){
+        text(c,title,25,y+21,16,INK,bold);text(c,desc,25,y+43,11,MUTED,regular);boolean on=store.option(key,fallback);float t=switchPosition(key,fallback);
+        if(!reduced()&&toggleKey.equals(key)&&now()-toggleAt<240)frameAnimating=true;
+        rect(c,320,y+5,54,30,15,blend(0xffdce2d4,GREEN,t));circle(c,335+24*t,y+20,11,WHITE);
+        hit(20,y-4,359,63,title+(on?", attivo":", disattivo"),()->{toggleFrom=switchPosition(key,fallback);toggleKey=key;toggleAt=now();store.toggle(key,fallback);readMotionPreference();invalidate();});
+    }
     private void updateCard(Canvas c,float y){
         rect(c,24,y,352,104,19,WHITE);text(c,"AGGIORNAMENTI",41,y+24,9,MUTED,bold);
         String label=updater.isBusy()?"Attendi…":updateReady?"Installa":availableUpdate!=null?"Scarica":"Verifica";
@@ -474,14 +586,15 @@ public final class TopperiaView extends ViewGroup {
         read(30,y,224,102,"Aggiornamenti. Versione installata "+updater.currentVersionName()+". "+updateStatus);
     }
 
-    private void actionCard(Canvas c,float x,float y,float w,float h,int color,String symbol,String title,String subtitle,Runnable action){rect(c,x,y+3,w,h,23,0xffe4e7db);rect(c,x,y,w,h,23,color);iconBadge(c,symbol,x+14,y+17,47,0x50ffffff);text(c,title,x+77,y+34,18,INK,bold);text(c,subtitle,x+77,y+57,11,INK,regular);chevron(c,x+w-24,y+42);hit(x,y,w,h,title,action);}
-    private void button(Canvas c,String title,float x,float y,float w,float h,int bg,int fg,Runnable action){rect(c,x,y,w,h,18,bg);center(c,title,x+w/2,y+h/2+5,15,fg,bold);hit(x,y,w,h,title,action);}
+    private void pressTransform(Canvas c,float x,float y,float w,float h){c.save();if(pressedBounds!=null&&!reduced()&&Math.abs(pressedBounds.width()-w)<3&&Math.abs(pressedBounds.top-(y+hitOffset))<3){float t=pressRelease==0?1-Motion.ease(Motion.progress(now(),pressAt,220)):Motion.ease(Motion.progress(now(),pressAt,100));float size=1-.025f*t;c.scale(size,size,x+w/2,y+h/2);}}
+    private void actionCard(Canvas c,float x,float y,float w,float h,int color,String symbol,String title,String subtitle,Runnable action){pressTransform(c,x,y,w,h);rect(c,x,y+3,w,h,23,0xffe4e7db);rect(c,x,y,w,h,23,color);iconBadge(c,symbol,x+14,y+17,47,0x50ffffff);text(c,title,x+77,y+34,18,INK,bold);text(c,subtitle,x+77,y+57,11,INK,regular);chevron(c,x+w-24,y+42);c.restore();hit(x,y,w,h,title,action);}
+    private void button(Canvas c,String title,float x,float y,float w,float h,int bg,int fg,Runnable action){pressTransform(c,x,y,w,h);rect(c,x,y,w,h,18,bg);center(c,title,x+w/2,y+h/2+5,15,fg,bold);c.restore();hit(x,y,w,h,title,action);}
     private void logoMark(Canvas c,float x,float y,float size){if(logo!=null)c.drawBitmap(logo,null,new RectF(x,y,x+size,y+size),logoPaint);}
     private void brand(Canvas c,float x,float y,float size){c.save();c.translate(x,y);c.scale(size,size);logoMark(c,-7,-38,49);text(c,"topperia",43,-1,25,INK,heavy);c.restore();}
     private void podium(Canvas c,float x,float y){float bob=(float)Math.sin(anim()*1.6)*4;c.save();c.translate(x,y);circle(c,6,1,76,0xff426e4d);oval(c,-65,57,126,19,0x33132920);rect(c,-65,16,43,49,10,0xffa8c972);rect(c,-26,-4,50,69,10,LIME);rect(c,20,28,43,37,10,0xffbfda85);center(c,"2",-44,46,19,GREEN,heavy);center(c,"1",-1,27,24,GREEN,heavy);center(c,"3",42,53,17,GREEN,heavy);trophy(c,-1,-42+bob,ORANGE);circle(c,-70,-49,12,LILAC);center(c,"?",-70,-45,13,INK,bold);star(c,61,-62,9,LIME);star(c,61,3,4,LILAC);c.restore();}
-    private void trophy(Canvas c,float x,float y,int color){c.save();c.translate(x,y);float b=(float)Math.sin(anim()*1.8)*2;c.translate(0,b);stroke(c,-37,-24,74,34,16,color,5);p.setColor(color);Path cup=new Path();cup.moveTo(-28,-34);cup.lineTo(28,-34);cup.lineTo(22,0);cup.quadTo(0,26,-22,0);cup.close();c.drawPath(cup,p);rect(c,-4,10,8,18,3,color);rect(c,-19,26,38,8,4,color);circle(c,-8,-13,2.5f,INK);circle(c,8,-13,2.5f,INK);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2.4f);p.setColor(INK);c.drawArc(-7,-12,7,1,15,150,false,p);p.setStyle(Paint.Style.FILL);star(c,43,-41,7,LILAC);c.restore();}
+    private void trophy(Canvas c,float x,float y,int color){if(c.quickReject(x-65,y-80,x+65,y+45,Canvas.EdgeType.AA))return;if(!reduced())frameAnimating=true;c.save();c.translate(x,y);float b=(float)Math.sin(anim()*1.8)*2;c.translate(0,b);stroke(c,-37,-24,74,34,16,color,5);p.setColor(color);Path cup=cupPath;cup.rewind();cup.moveTo(-28,-34);cup.lineTo(28,-34);cup.lineTo(22,0);cup.quadTo(0,26,-22,0);cup.close();c.drawPath(cup,p);rect(c,-4,10,8,18,3,color);rect(c,-19,26,38,8,4,color);circle(c,-8,-13,2.5f,INK);circle(c,8,-13,2.5f,INK);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2.4f);p.setColor(INK);c.drawArc(-7,-12,7,1,15,150,false,p);p.setStyle(Paint.Style.FILL);star(c,43,-41,7,LILAC);c.restore();}
     private void iconBadge(Canvas c,String name,float x,float y,float s,int bg){rect(c,x,y,s,s,s*.3f,bg);icon(c,name,x+s*.24f,y+s*.24f,s*.52f,INK);}
-    private void icon(Canvas c,String name,float x,float y,float size,int color){c.save();c.translate(x,y);c.scale(size/24,size/24);p.setColor(color);p.setStrokeWidth(1.8f);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);p.setStyle(Paint.Style.STROKE);Path a=new Path();
+    private void icon(Canvas c,String name,float x,float y,float size,int color){c.save();c.translate(x,y);c.scale(size/24,size/24);p.setColor(color);p.setStrokeWidth(1.8f);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);p.setStyle(Paint.Style.STROKE);Path a=iconPath;a.rewind();
         switch(name){
             case "dice":c.drawRoundRect(2,2,22,22,5,5,p);for(float[] point:new float[][]{{7,7},{17,7},{12,12},{7,17},{17,17}}){c.drawCircle(point[0],point[1],.9f,p);}break;
             case "music":c.drawLine(9,5,9,18,p);c.drawLine(20,2,20,15,p);c.drawLine(9,5,20,2,p);c.drawLine(9,9,20,6,p);c.drawOval(3,16,9,22,p);c.drawOval(14,13,20,19,p);break;
@@ -515,7 +628,7 @@ public final class TopperiaView extends ViewGroup {
         p.setStyle(Paint.Style.FILL);c.restore();
     }
     private void chevron(Canvas c,float x,float y){line(c,x-3,y-5,x+2,y,INK,1.6f);line(c,x+2,y,x-3,y+5,INK,1.6f);}
-    private void star(Canvas c,float x,float y,float r,int color){Path a=new Path();for(int i=0;i<10;i++){double t=-Math.PI/2+i*Math.PI/5;float rr=i%2==0?r:r*.45f;float xx=x+(float)Math.cos(t)*rr,yy=y+(float)Math.sin(t)*rr;if(i==0)a.moveTo(xx,yy);else a.lineTo(xx,yy);}a.close();p.setColor(color);p.setStyle(Paint.Style.FILL);c.drawPath(a,p);}
+    private void star(Canvas c,float x,float y,float r,int color){Path a=starPath;a.rewind();for(int i=0;i<10;i++){double t=-Math.PI/2+i*Math.PI/5;float rr=i%2==0?r:r*.45f;float xx=x+(float)Math.cos(t)*rr,yy=y+(float)Math.sin(t)*rr;if(i==0)a.moveTo(xx,yy);else a.lineTo(xx,yy);}a.close();p.setColor(color);p.setStyle(Paint.Style.FILL);c.drawPath(a,p);}
     private void rect(Canvas c,float x,float y,float w,float h,float radius,int color){p.setColor(color);p.setStyle(Paint.Style.FILL);c.drawRoundRect(x,y,x+w,y+h,radius,radius,p);}
     private void stroke(Canvas c,float x,float y,float w,float h,float radius,int color,float width){p.setColor(color);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(width);c.drawRoundRect(x,y,x+w,y+h,radius,radius,p);p.setStyle(Paint.Style.FILL);}
     private void circle(Canvas c,float x,float y,float r,int color){p.setColor(color);p.setStyle(Paint.Style.FILL);c.drawCircle(x,y,r,p);}
@@ -523,15 +636,64 @@ public final class TopperiaView extends ViewGroup {
     private void line(Canvas c,float x,float y,float xx,float yy,int color,float width){p.setColor(color);p.setStrokeWidth(width);p.setStrokeCap(Paint.Cap.ROUND);c.drawLine(x,y,xx,yy,p);}
     private void text(Canvas c,String s,float x,float y,float size,int color,Typeface face){p.setColor(color);p.setTypeface(face);p.setTextSize(size);p.setStyle(Paint.Style.FILL);c.drawText(s,x,y,p);}
     private float measure(String s,float size,Typeface face){p.setTypeface(face);p.setTextSize(size);return p.measureText(s);}
-    private void fit(Canvas c,String s,float x,float y,float width,float size,int color,Typeface face){while(size>8&&measure(s,size,face)>width)size=Math.max(8,size-.3f);if(measure(s,size,face)>width){while(s.length()>1&&measure(s+"…",size,face)>width)s=s.substring(0,s.length()-1);s+="…";}text(c,s,x,y,size,color,face);}
+    private static final class FittedText{final String text;final float size;FittedText(String text,float size){this.text=text;this.size=size;}}
+    private void fit(Canvas c,String s,float x,float y,float width,float size,int color,Typeface face){
+        if(c.quickReject(x,y-size,x+width,y+size*.3f,Canvas.EdgeType.AA))return;
+        String key=s+'\n'+width+':'+size+':'+(face==heavy?2:face==bold?1:0);FittedText fitted=fittedText.get(key);
+        if(fitted==null){while(size>8&&measure(s,size,face)>width)size=Math.max(8,size-.3f);if(measure(s,size,face)>width){while(s.length()>1&&measure(s+"…",size,face)>width)s=s.substring(0,s.length()-1);s+="…";}fitted=new FittedText(s,size);if(fittedText.size()>320)fittedText.clear();fittedText.put(key,fitted);}
+        text(c,fitted.text,x,y,fitted.size,color,face);
+    }
     private void center(Canvas c,String s,float x,float y,float size,int color,Typeface face){text(c,s,x-measure(s,size,face)/2,y,size,color,face);}
     private void centerFit(Canvas c,String s,float x,float y,float width,float size,int color,Typeface face){while(size>13&&measure(s,size,face)>width)size-=.5f;center(c,s,x,y,size,color,face);}
     private void pill(Canvas c,String title,float x,float y,float w,float h,int bg,int fg,float size){if(bg!=0)rect(c,x,y,w,h,h/2,bg);center(c,title,x+w/2,y+h/2+size*.35f,size,fg,bold);}
-    private float wrap(Canvas c,String value,float x,float y,float width,float size,float spacing,int color,Typeface face,int max){String[] words=value.split(" ");String row="";int rows=0;for(String word:words){if(measure(row+word,size,face)>width&&!row.isEmpty()){text(c,row.trim(),x,y+rows*spacing,size,color,face);rows++;row="";if(rows>=max)return y+rows*spacing;}row+=word+" ";}if(!row.isEmpty()&&rows<max)text(c,row.trim(),x,y+rows*spacing,size,color,face);return y+(rows+1)*spacing;}
-    private void hit(float x,float y,float w,float h,String description,Runnable action){RectF b=new RectF(x,y+hitOffset,x+w,y+h+hitOffset);if(contentClip&&!b.intersect(0,0,400,H-DOCK_SPACE))return;hits.add(new Hit(b,description,action));}
+    private float wrap(Canvas c,String value,float x,float y,float width,float size,float spacing,int color,Typeface face,int max){
+        if(c.quickReject(x,y-size,x+width,y+max*spacing,Canvas.EdgeType.AA))return y+max*spacing;
+        String key=value+'\n'+width+':'+size+':'+max+':'+(face==heavy?2:face==bold?1:0);
+        String[] lines=wrappedText.get(key);
+        if(lines==null){
+            ArrayList<String> rows=new ArrayList<>();String row="";
+            for(String word:value.split(" ")){if(!row.isEmpty()&&measure(row+" "+word,size,face)>width){rows.add(row);row="";if(rows.size()==max)break;}row+=row.isEmpty()?word:" "+word;}
+            if(!row.isEmpty()&&rows.size()<max)rows.add(row);
+            lines=rows.toArray(new String[0]);if(wrappedText.size()>240)wrappedText.clear();wrappedText.put(key,lines);
+        }
+        for(int i=0;i<lines.length;i++)text(c,lines[i],x,y+i*spacing,size,color,face);
+        return y+lines.length*spacing;
+    }
+    private void hit(float x,float y,float w,float h,String description,Runnable action){if(capturing)return;RectF b=new RectF(x+pageShift,y+hitOffset,x+w+pageShift,y+h+hitOffset);if(contentClip&&!b.intersect(0,0,400,H-DOCK_SPACE))return;hits.add(new Hit(b,description,action));}
     private void read(float x,float y,float w,float h,String description){hit(x,y,w,h,description,null);}
     private static final class Hit{final RectF bounds;final String label;final Runnable action;Hit(RectF b,String s,Runnable a){bounds=b;label=s;action=a;}}
-    @Override public boolean onTouchEvent(android.view.MotionEvent event){float x=event.getX()/scale,y=event.getY()/scale;switch(event.getActionMasked()){case MotionEvent.ACTION_DOWN:downX=x;downY=y;lastY=y;dragging=false;return true;case MotionEvent.ACTION_MOVE:if(Math.abs(y-downY)>8||Math.abs(x-downX)>12)dragging=true;if(dragging&&modal.isEmpty()&&!screen.equals("game")&&!screen.equals("onboarding")&&!screen.equals("shuffle")){scroll=Math.max(0,Math.min(maxScroll,scroll+lastY-y));invalidate();}lastY=y;return true;case MotionEvent.ACTION_UP:if(screen.equals("onboarding")&&Math.abs(x-downX)>50&&Math.abs(x-downX)>Math.abs(y-downY)*1.3f){if(x<downX)onboardingPage(onboardingStep+1);else onboardingPage(onboardingStep-1);return true;}if(!dragging){for(int i=hits.size()-1;i>=0;i--){Hit hit=hits.get(i);if(hit.action!=null&&hit.bounds.contains(x,y)){tappedAction=hit.action;performClick();break;}}}return true;case MotionEvent.ACTION_CANCEL:return true;}return true;}
+    @Override public boolean onTouchEvent(MotionEvent event){
+        int action=event.getActionMasked();
+        if(action==MotionEvent.ACTION_DOWN){
+            boolean moving=!scroller.isFinished();stopScroll();activePointer=event.getPointerId(0);velocity=VelocityTracker.obtain();velocity.addMovement(event);
+            float x=event.getX()/scale,y=event.getY()/scale;downX=x;downY=lastY=y;dragging=moving;
+            scrollingGesture=modal.isEmpty()&&maxScroll>0&&y<H-DOCK_SPACE;
+            sheetGesture=!modal.isEmpty()&&!sheetClosing&&y>=sheetTop()&&y<=sheetTop()+110;
+            clearPress();if(!moving&&!sheetClosing){for(int i=hits.size()-1;i>=0;i--){Hit hit=hits.get(i);if(hit.action!=null&&hit.bounds.contains(x,y)){pressedBounds=new RectF(hit.bounds);pressAt=now();break;}}}
+            invalidate();return true;
+        }
+        if(velocity!=null)velocity.addMovement(event);
+        if(action==MotionEvent.ACTION_POINTER_UP&&event.getPointerId(event.getActionIndex())==activePointer){int index=event.getActionIndex()==0?1:0;activePointer=event.getPointerId(index);lastY=event.getY(index)/scale;downX=event.getX(index)/scale;downY=lastY;dragging=true;clearPress();postInvalidateOnAnimation();return true;}
+        int index=event.findPointerIndex(activePointer);if(index<0)index=0;
+        float x=event.getX(index)/scale,y=event.getY(index)/scale;
+        switch(action){
+            case MotionEvent.ACTION_MOVE:
+                if(!dragging&&(Math.abs(y-downY)*scale>touchSlop||Math.abs(x-downX)*scale>touchSlop)){dragging=true;clearPress();}
+                if(dragging){if(sheetGesture)sheetDrag=Math.max(0,y-downY);else if(scrollingGesture)scroll=Math.max(0,Math.min(maxScroll,scroll+lastY-y));postInvalidateOnAnimation();}
+                lastY=y;return true;
+            case MotionEvent.ACTION_UP:
+                if(velocity!=null)velocity.computeCurrentVelocity(1000,maxFling);
+                float speed=velocity==null?0:velocity.getYVelocity(activePointer)/scale;
+                if(sheetGesture&&dragging){if(sheetDrag>70||speed>900){closeSheet();}else{sheetFrom=Math.max(0,sheetProgress()-sheetDrag/sheetHeight());sheetTarget=1;sheetAt=now();sheetDrag=0;}}
+                else if(dragging&&scrollingGesture&&!reduced()&&Math.abs(speed)>minFling/scale){scroller.fling(0,Math.round(scroll*scale),0,Math.round(-speed*scale),0,0,0,Math.round(maxScroll*scale));postInvalidateOnAnimation();}
+                else if(screen.equals("onboarding")&&modal.isEmpty()&&Math.abs(x-downX)>50&&Math.abs(x-downX)>Math.abs(y-downY)*1.3f){onboardingPage(onboardingStep+(x<downX?1:-1));}
+                else if(!dragging&&!sheetClosing){if(!modal.isEmpty()&&y<sheetTop())closeSheet();else{for(int i=hits.size()-1;i>=0;i--){Hit hit=hits.get(i);if(hit.action!=null&&hit.bounds.contains(x,y)&&hit.bounds.contains(downX,downY)){tappedAction=hit.action;performClick();break;}}}}
+                releasePress();if(velocity!=null){velocity.recycle();velocity=null;}activePointer=-1;sheetGesture=false;postInvalidateOnAnimation();return true;
+            case MotionEvent.ACTION_CANCEL:
+                if(sheetDrag>0){sheetFrom=Math.max(0,sheetProgress()-sheetDrag/sheetHeight());sheetTarget=1;sheetAt=now();sheetDrag=0;}stopScroll();sheetGesture=false;clearPress();invalidate();return true;
+        }
+        return true;
+    }
     @Override public boolean performClick(){super.performClick();if(tappedAction!=null){Runnable action=tappedAction;tappedAction=null;action.run();invalidate();return true;}return false;}
 
     private void accessEvent(int id,int type){AccessibilityEvent event=AccessibilityEvent.obtain(type);event.setSource(this,id);event.setPackageName(activity.getPackageName());if(id>0&&id<=hits.size())event.setContentDescription(hits.get(id-1).label);if(getParent()!=null)getParent().requestSendAccessibilityEvent(this,event);}
@@ -540,9 +702,9 @@ public final class TopperiaView extends ViewGroup {
     /** Virtual native controls keep the canvas navigable with TalkBack and switches. */
     @Override public AccessibilityNodeProvider getAccessibilityNodeProvider(){return new AccessibilityNodeProvider(){
         @Override public AccessibilityNodeInfo createAccessibilityNodeInfo(int id){
-            if(id==View.NO_ID){AccessibilityNodeInfo node=AccessibilityNodeInfo.obtain(TopperiaView.this);onInitializeAccessibilityNodeInfo(node);for(int i=0;i<hits.size();i++)if(hits.get(i).bounds.bottom>0&&hits.get(i).bounds.top<H)node.addChild(TopperiaView.this,i+1);if(input.getVisibility()==VISIBLE)node.addChild(input);if(submit.getVisibility()==VISIBLE)node.addChild(submit);if(maxScroll>0){node.setScrollable(true);node.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD);node.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD);}return node;}
+            if(id==View.NO_ID){AccessibilityNodeInfo node=AccessibilityNodeInfo.obtain(TopperiaView.this);onInitializeAccessibilityNodeInfo(node);for(int i=0;i<hits.size();i++)if(hits.get(i).bounds.bottom>0&&hits.get(i).bounds.top<H)node.addChild(TopperiaView.this,i+1);if(input.getVisibility()==VISIBLE)node.addChild(input);if(submit.getVisibility()==VISIBLE)node.addChild(submit);if(modal.isEmpty()&&maxScroll>0){node.setScrollable(true);node.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD);node.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD);}return node;}
             if(id<1||id>hits.size())return null;Hit hit=hits.get(id-1);AccessibilityNodeInfo node=AccessibilityNodeInfo.obtain();node.setSource(TopperiaView.this,id);node.setParent(TopperiaView.this);node.setPackageName(activity.getPackageName());node.setClassName(hit.action!=null?"android.widget.Button":"android.widget.TextView");node.setContentDescription(hit.label);node.setEnabled(true);node.setVisibleToUser(hit.bounds.bottom>0&&hit.bounds.top<H);node.setClickable(hit.action!=null);node.setFocusable(true);node.setAccessibilityFocused(accessibilityFocus==id);if(hit.action!=null)node.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK);node.addAction(accessibilityFocus==id?AccessibilityNodeInfo.AccessibilityAction.ACTION_CLEAR_ACCESSIBILITY_FOCUS:AccessibilityNodeInfo.AccessibilityAction.ACTION_ACCESSIBILITY_FOCUS);Rect b=new Rect((int)(hit.bounds.left*scale),(int)(hit.bounds.top*scale),(int)(hit.bounds.right*scale),(int)(hit.bounds.bottom*scale));node.setBoundsInParent(b);int[] location=new int[2];getLocationOnScreen(location);b.offset(location[0],location[1]);node.setBoundsInScreen(b);return node;
         }
-        @Override public boolean performAction(int id,int action,Bundle args){if(id==View.NO_ID&&(action==AccessibilityNodeInfo.ACTION_SCROLL_FORWARD||action==AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)){scroll=Math.max(0,Math.min(maxScroll,scroll+(action==AccessibilityNodeInfo.ACTION_SCROLL_FORWARD?1:-1)*H*.6f));invalidate();sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SCROLLED);return true;}if(id>0&&id<=hits.size()){if(action==AccessibilityNodeInfo.ACTION_CLICK&&hits.get(id-1).action!=null){hits.get(id-1).action.run();invalidate();return true;}if(action==AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS){accessibilityFocus=id;accessEvent(id,AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED);return true;}if(action==AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS){accessibilityFocus=-1;accessEvent(id,AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED);return true;}}return false;}
+        @Override public boolean performAction(int id,int action,Bundle args){if(id==View.NO_ID&&(action==AccessibilityNodeInfo.ACTION_SCROLL_FORWARD||action==AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)){if(!modal.isEmpty()||maxScroll<=0)return false;stopScroll();float target=Math.max(0,Math.min(maxScroll,scroll+(action==AccessibilityNodeInfo.ACTION_SCROLL_FORWARD?1:-1)*H*.6f));if(reduced())scroll=target;else scroller.startScroll(0,Math.round(scroll*scale),0,Math.round((target-scroll)*scale),300);postInvalidateOnAnimation();sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SCROLLED);return true;}if(id>0&&id<=hits.size()){if(action==AccessibilityNodeInfo.ACTION_CLICK&&!sheetClosing&&hits.get(id-1).action!=null){hits.get(id-1).action.run();invalidate();return true;}if(action==AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS){accessibilityFocus=id;accessEvent(id,AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED);return true;}if(action==AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS){accessibilityFocus=-1;accessEvent(id,AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED);return true;}}return false;}
     };}
 }
