@@ -241,10 +241,30 @@ function Get-ReleaseJson {
     param([string]$Gh, [string]$Repository, [string]$Tag)
     $result = Invoke-ReleaseCommand $Gh @('api', "repos/$Repository/releases/tags/$Tag") -AllowFailure
     if ($result.ExitCode -ne 0) {
-        if ($result.Text -match '(?i)HTTP 404') { return $null }
-        throw ('Impossibile leggere la release GitHub.' + "`n" + $result.Text)
+        if ($result.Text -notmatch '(?i)HTTP 404') { throw ('Impossibile leggere la release GitHub.' + "`n" + $result.Text) }
+        # The REST tag endpoint can omit drafts. Let gh resolve the authenticated
+        # release identity, then fetch the REST object expected by the pipeline.
+        $identityResult = Invoke-ReleaseCommand $Gh @('release', 'view', $Tag, '--repo', $Repository, '--json', 'databaseId,tagName') -AllowFailure
+        if ($identityResult.ExitCode -ne 0) {
+            if ($identityResult.Text -match '(?im)^\s*release not found\s*$' -or $identityResult.Text -match '(?i)HTTP 404') { return $null }
+            throw ('Impossibile risolvere la release GitHub, inclusa una eventuale bozza.' + "`n" + $identityResult.Text)
+        }
+        $identity = $identityResult.Text | ConvertFrom-Json
+        $releaseId = 0L
+        if ($null -eq $identity -or $null -eq $identity.PSObject.Properties['databaseId'] -or
+            $null -eq $identity.PSObject.Properties['tagName'] -or $identity.tagName -cne $Tag -or
+            [string]$identity.databaseId -notmatch '^[1-9][0-9]*$' -or
+            -not [long]::TryParse([string]$identity.databaseId, [ref]$releaseId)) {
+            throw 'GitHub CLI non ha restituito un ID valido per il tag richiesto.'
+        }
+        $result = Invoke-ReleaseCommand $Gh @('api', "repos/$Repository/releases/$releaseId") -AllowFailure
+        if ($result.ExitCode -ne 0) { throw ('La release GitHub esiste ma non e leggibile tramite il suo ID.' + "`n" + $result.Text) }
     }
-    return $result.Text | ConvertFrom-Json
+    $release = $result.Text | ConvertFrom-Json
+    if ($null -eq $release -or $null -eq $release.PSObject.Properties['tag_name'] -or $release.tag_name -cne $Tag) {
+        throw 'GitHub ha restituito una release con un tag diverso da quello richiesto.'
+    }
+    return $release
 }
 
 function Assert-NewerThanLatestRelease {

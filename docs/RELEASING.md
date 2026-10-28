@@ -54,6 +54,8 @@ release.bat -Resume
 
 Non incrementa di nuovo la versione. Riprende lo stato conservato in `output/release-state.json`: può ripetere una compilazione non completata, ritentare il push o finire gli upload mancanti di una bozza. Se il rilascio era già pubblicato, ne verifica gli artefatti senza crearne uno nuovo.
 
+Le bozze vengono riconosciute anche quando GitHub non le restituisce cercando il tag: lo script risolve il loro ID tramite l’account autenticato e ne verifica i metadati prima di proseguire.
+
 In caso di errore, conserva `output/releases/` e `output/release-state.json`. Risolvi prima il problema indicato, per esempio la connessione, l’accesso GitHub o la configurazione dell’SDK. Non modificare `HEAD`, la versione o gli artefatti tra un tentativo e il successivo: lo script li riconosce e si ferma se non corrispondono più al rilascio iniziato. Un problema nel codice che richiede nuovi commit va risolto e revisionato separatamente prima di preparare un altro rilascio.
 
 Non vengono eseguiti `reset`, push forzati, cancellazioni di commit o sostituzioni di asset già pubblicati. Un tag che punta a un commit diverso o un asset remoto con contenuto diverso interrompe il processo. Una bozza incompleta può essere corretta manualmente su GitHub e poi ripresa; una release pubblicata non viene riscritta dal `.bat`.
@@ -91,6 +93,6 @@ Il manifest identifica un asset della release: non può indirizzare l’app a un
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-release.ps1
 ```
 
-I test controllano incremento e limiti della versione, fingerprint e metadati, URL della repository, esclusione dei file privati, percorsi confinati al progetto, manifest e hash, recupero dello stato, errori dei processi esterni e un vero dry-run PowerShell 5.1 in una cartella con spazi. Non pubblicano release.
+I test controllano incremento e limiti della versione, fingerprint e metadati, URL della repository, esclusione dei file privati, percorsi confinati al progetto, manifest e hash, recupero dello stato, lettura di release pubbliche e bozze con risposte simulate, errori dei processi esterni e un vero dry-run PowerShell 5.1 in una cartella con spazi. Non pubblicano release.
 
 Riferimenti del flusso GitHub: [creazione di una bozza con tag verificato](https://cli.github.com/manual/gh_release_create), [pubblicazione della bozza](https://cli.github.com/manual/gh_release_edit), [caricamento degli asset](https://cli.github.com/manual/gh_release_upload).

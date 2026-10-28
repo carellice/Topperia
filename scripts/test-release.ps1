@@ -99,6 +99,53 @@ Check $true 'accept the exact asset and byte count'
 Rejects { Assert-ReleaseAssets ([pscustomobject]@{assets=@()}) @($asset) } 'reject a missing remote asset'
 Rejects { Assert-ReleaseAssets ([pscustomobject]@{assets=@([pscustomobject]@{name='Topperia-1.1.2.apk';size=4})}) @($asset) } 'reject a truncated remote asset'
 
+function Invoke-MockedReleaseLookup {
+    param([object[]]$Responses, [string[]]$ExpectedCalls)
+    $calls = New-Object 'Collections.Generic.List[string]'
+    function Invoke-ReleaseCommand {
+        param([string]$FilePath, [string[]]$Arguments, [switch]$AllowFailure, [switch]$ShowOutput)
+        $index = $calls.Count
+        [void]$calls.Add(($FilePath + '|' + ($Arguments -join '|')))
+        if ($index -ge $Responses.Count) { throw 'Unexpected additional GitHub request in test.' }
+        return $Responses[$index]
+    }
+    $value = $null
+    $failure = $null
+    try { $value = Get-ReleaseJson 'mock-gh' 'carellice/Topperia' 'v1.1.2' } catch { $failure = $_.Exception }
+    Check ($calls.Count -eq $ExpectedCalls.Count) 'release lookup performs only the expected requests'
+    for ($i = 0; $i -lt $ExpectedCalls.Count; $i++) {
+        Check ($calls[$i] -ceq ('mock-gh|' + $ExpectedCalls[$i])) 'release lookup uses the exact repository, tag, and numeric ID'
+    }
+    return [pscustomobject]@{ Value = $value; Failure = $failure }
+}
+
+$tagRequest = 'api|repos/carellice/Topperia/releases/tags/v1.1.2'
+$identityRequest = 'release|view|v1.1.2|--repo|carellice/Topperia|--json|databaseId,tagName'
+$idRequest = 'api|repos/carellice/Topperia/releases/426811034'
+$notFound = [pscustomobject]@{ExitCode=1;Text='gh: Not Found (HTTP 404)'}
+$identity = [pscustomobject]@{ExitCode=0;Text='{"databaseId":426811034,"tagName":"v1.1.2"}'}
+$publicResponse = [pscustomobject]@{ExitCode=0;Text='{"id":426811034,"tag_name":"v1.1.2","draft":false,"prerelease":false,"assets":[{"id":100,"name":"update.json","size":301}]}'}
+$draftResponse = [pscustomobject]@{ExitCode=0;Text='{"id":426811034,"tag_name":"v1.1.2","draft":true,"prerelease":false,"assets":[{"id":101,"name":"Topperia-1.1.2.apk","size":12345}]}'}
+$lookup = Invoke-MockedReleaseLookup @($publicResponse) @($tagRequest)
+Check ($null -eq $lookup.Failure -and -not $lookup.Value.draft -and $lookup.Value.assets[0].name -ceq 'update.json') 'read a public release without a fallback or REST field conversion'
+$lookup = Invoke-MockedReleaseLookup @($notFound, $identity, $draftResponse) @($tagRequest, $identityRequest, $idRequest)
+Check ($null -eq $lookup.Failure -and $lookup.Value.draft -and $lookup.Value.tag_name -ceq 'v1.1.2') 'resolve a draft omitted by the REST tag endpoint'
+Check ($lookup.Value.id -eq 426811034 -and $lookup.Value.assets[0].id -eq 101 -and $lookup.Value.assets[0].size -eq 12345) 'preserve draft REST identity and asset metadata for verification and publication'
+$lookup = Invoke-MockedReleaseLookup @($notFound, [pscustomobject]@{ExitCode=1;Text='release not found'}) @($tagRequest, $identityRequest)
+Check ($null -eq $lookup.Failure -and $null -eq $lookup.Value) 'return null only after GitHub CLI also confirms an absent release'
+$lookup = Invoke-MockedReleaseLookup @([pscustomobject]@{ExitCode=1;Text='gh: Forbidden (HTTP 403)'}) @($tagRequest)
+Check ($null -ne $lookup.Failure) 'do not mask a REST permission failure as a missing release'
+$lookup = Invoke-MockedReleaseLookup @($notFound, [pscustomobject]@{ExitCode=1;Text='gh: Bad credentials (HTTP 401)'}) @($tagRequest, $identityRequest)
+Check ($null -ne $lookup.Failure) 'do not mask a fallback authentication failure as a missing release'
+foreach ($invalidIdentity in @('{"databaseId":0,"tagName":"v1.1.2"}', '{"databaseId":"../latest","tagName":"v1.1.2"}', '{"databaseId":426811034,"tagName":"v1.1.3"}', '{"databaseId":"9223372036854775808","tagName":"v1.1.2"}', '{"tagName":"v1.1.2"}')) {
+    $lookup = Invoke-MockedReleaseLookup @($notFound, [pscustomobject]@{ExitCode=0;Text=$invalidIdentity}) @($tagRequest, $identityRequest)
+    Check ($null -ne $lookup.Failure) 'reject a malformed or mismatched fallback identity before requesting an ID endpoint'
+}
+$lookup = Invoke-MockedReleaseLookup @($notFound, $identity, $notFound) @($tagRequest, $identityRequest, $idRequest)
+Check ($null -ne $lookup.Failure) 'fail safely if a resolved draft cannot be read by its ID'
+$lookup = Invoke-MockedReleaseLookup @($notFound, $identity, [pscustomobject]@{ExitCode=0;Text='{"tag_name":"v1.1.3","draft":true}'}) @($tagRequest, $identityRequest, $idRequest)
+Check ($null -ne $lookup.Failure) 'reject a REST release belonging to another tag'
+
 $stateFile = Join-Path $testDirectory 'release-state.json'
 $state = [pscustomobject]@{schemaVersion=1;stage='prepared';versionName='1.1.2';versionCode=4;repository='carellice/Topperia'}
 Save-ReleaseState $stateFile $state
