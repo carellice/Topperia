@@ -18,6 +18,7 @@ public final class EngineTest {
         perfectGame();
         independentDuelBoardsAndWinner();
         tiedDuel();
+        blindDuelHidesFeedback();
         saveAndRestoreEveryPhase();
         rejectsInvalidSavesAndRankings();
         shippedRankingsIntegration();
@@ -111,6 +112,27 @@ public final class EngineTest {
         fillWrong(game, 10);
         check(game.isDraw(), "equal final scores are a draw");
         check(game.winnerIndex() == -1, "draw has no winner");
+    }
+
+    private static void blindDuelHidesFeedback() {
+        GameSession game = new GameSession(ranking(), GameSession.Mode.DUEL, "Ada", "Leo");
+        check(game.isBlind(), "duels are played blind");
+        check(!new GameSession(ranking(), GameSession.Mode.SOLO).isBlind(), "solo games show feedback");
+        check(game.submit("USA").status == GameSession.GuessStatus.HIT, "blind hit is still scored");
+        GameSession.GuessResult alias = game.submit("Stati Uniti");
+        check(alias.status == GameSession.GuessStatus.MISS, "alias of a sealed hit cannot leak a duplicate notice");
+        check(alias.entryIndex == 0, "repeated hit remembers its position for the final reveal");
+        check(game.currentPlayer().attemptsUsed() == 2, "alias of a sealed hit spends an attempt");
+        check(game.currentPlayer().score() == 1, "repeated hit is not scored twice");
+        check(game.submit(" usa ").status == GameSession.GuessStatus.DUPLICATE, "identical text is still free");
+        GameSession perfect = new GameSession(ranking(), GameSession.Mode.DUEL);
+        for (int i = 0; i < 9; i++) perfect.submit(perfect.ranking.entries.get(i).name);
+        check(perfect.phase() == GameSession.Phase.PLAYING, "blind player keeps playing without a perfect-board signal");
+        perfect.submit(perfect.ranking.entries.get(9).name);
+        check(perfect.phase() == GameSession.Phase.HANDOFF && perfect.player(0).score() == 10, "ten blind hits reach the handoff");
+        GameSession restored = GameSession.restore(ranking(), game.serialize());
+        check(restored.currentPlayer().score() == 1 && restored.currentPlayer().attemptsUsed() == 2,
+                "blind repeated hits restore identically");
     }
 
     private static void saveAndRestoreEveryPhase() {

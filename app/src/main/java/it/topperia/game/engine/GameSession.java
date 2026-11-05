@@ -12,7 +12,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Pure game rules. A duel keeps the same ranking and gives each player a fresh board. */
+/**
+ * Pure game rules. A duel keeps the same ranking and gives each player a fresh board.
+ * Duels are blind: each player seals ten answers without feedback and nothing is
+ * revealed until both boards are complete.
+ */
 public final class GameSession {
     public static final int MAX_ATTEMPTS = 10;
     public static final int MAX_INPUT_LENGTH = 120;
@@ -46,6 +50,8 @@ public final class GameSession {
     public int playerCount() { return players.length; }
     public PlayerState currentPlayer() { return players[activePlayer]; }
     public PlayerState player(int index) { return players[index]; }
+    /** True when guesses must not reveal hits or misses until the duel is over. */
+    public boolean isBlind() { return mode == Mode.DUEL; }
 
     public GuessResult submit(String input) {
         PlayerState player = currentPlayer();
@@ -55,17 +61,20 @@ public final class GameSession {
         String normalized = RankedList.normalize(raw);
         if (normalized.isEmpty()) return result(GuessStatus.EMPTY, -1);
         int index = ranking.indexOf(raw);
-        if (player.normalizedGuesses.contains(normalized) || (index >= 0 && player.revealed[index])) {
+        boolean alreadyFound = index >= 0 && player.revealed[index];
+        // A blind player only learns about identical text: an alias of a sealed hit
+        // must spend an attempt, otherwise the duplicate notice would leak the hit.
+        if (player.normalizedGuesses.contains(normalized) || (alreadyFound && !isBlind())) {
             return result(GuessStatus.DUPLICATE, index);
         }
-        GuessStatus status = index >= 0 ? GuessStatus.HIT : GuessStatus.MISS;
+        GuessStatus status = index >= 0 && !alreadyFound ? GuessStatus.HIT : GuessStatus.MISS;
         player.normalizedGuesses.add(normalized);
         player.guesses.add(new Guess(raw, status, index));
-        if (index >= 0) {
+        if (status == GuessStatus.HIT) {
             player.revealed[index] = true;
             player.score++;
         }
-        if (player.attemptsRemaining() == 0 || player.score == ranking.entries.size()) {
+        if (player.attemptsRemaining() == 0 || (!isBlind() && player.score == ranking.entries.size())) {
             phase = mode == Mode.DUEL && activePlayer == 0 ? Phase.HANDOFF : Phase.FINISHED;
         }
         return result(status, index);

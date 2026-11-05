@@ -1,5 +1,15 @@
 # Verifiche di Topperia
 
+## Nuova grafica e sfida alla cieca — 1.1.6
+
+Verifica del 5 novembre 2026 su emulatore Android 17, 1080 × 2424.
+
+- Percorsi provati con tocchi e tastiera reali: introduzione, home, catalogo con filtri, scheda di dettaglio, profilo, impostazioni, partita in solitaria con risposte corrette ed errate, uscita e ripresa dalla home.
+- Sfida 1 contro 1: nomi inseriti nella nuova pagina, scelta della classifica, dieci risposte sigillate per giocatore senza indicazioni di esito, passaggio del telefono, resa dei conti animata con punteggi progressivi, vincitore e classifica completa con le scoperte di ciascuno.
+- Regole del motore: in una sfida un alias di una risposta già trovata consuma un tentativo invece di segnalare il doppione, così non rivela l’esito; il turno finisce solo dopo dieci risposte. Superate **2.777** asserzioni del motore, **925** delle estrazioni, **53** degli aggiornamenti e **424** delle animazioni. Android Lint senza errori.
+- Corretto durante il collaudo: gli eventi tasto facevano uscire Android dal touch mode e l’evidenziazione di focus predefinita velava l’intera schermata. È ora disattivata sulla vista e sui campi di testo.
+- Il runner `MotionInstrumentation` è aggiornato alle nuove etichette, ma l’emulatore registra soltanto l’ultima strumentazione dichiarata nel manifest di test: non è stato eseguito. Nessuna prova su telefono fisico.
+
 ## Aggiornamento dall’app — 1.1.5
 
 Verifica del 28 ottobre 2026, Android 15 / API 35 su emulatore isolato.

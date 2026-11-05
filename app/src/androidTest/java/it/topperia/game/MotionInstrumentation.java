@@ -96,7 +96,7 @@ public final class MotionInstrumentation extends Instrumentation {
                 return rows;
             });
             check(visibleRows > 0 && visibleRows < 10, "only visible catalogue rows become controls");
-            tap("Scopri");
+            tap("Gioca");
             pause(450);
             check("home".equals(value("screen")), "dock stays usable after scrolling");
 
@@ -162,7 +162,7 @@ public final class MotionInstrumentation extends Instrumentation {
             pause(450);
             check("home".equals(value("screen")),"closing introduction returns to its originating page");
 
-            tap("Percorso");
+            tap("Profilo");
             pause(450);
             check("profile".equals(value("screen")), "profile navigation works after modal interactions");
             screenshot("profile");
@@ -173,7 +173,10 @@ public final class MotionInstrumentation extends Instrumentation {
             check("Italia".equals(value("filter")), "category controls remain aligned with their rendering");
             check(number("scroll") == 0, "changing category resets scroll position");
             screenshot("category-italia");
-            tapPrefix("Gioca: ");
+            tapPrefix("Classifica: ");
+            pause(500);
+            check("detail".equals(value("modal")),"a catalogue card opens its detail sheet");
+            tap("Gioca da solo");
             pause(500);
             check("game".equals(value("screen")),"a visible catalogue card opens its game");
             android.widget.EditText input=(android.widget.EditText)value("input");

@@ -23,7 +23,7 @@
 Un trivia nativo Android, in italiano, per chi ama chiedersi «ma sarà davvero nella Top 10?». Trenta classifiche reali, dieci tentativi e il piacere di una risposta inaspettata. **Tutte le partite funzionano offline**, da soli o sfidandosi sullo stesso telefono.
 
 <p align="center">
-  <img src="docs/images/home.png" alt="La home di Topperia con il logo originale, Sorprendimi e le modalità di gioco" width="330" />
+  <img src="docs/images/home.png" alt="La nuova home notturna di Topperia con Sorprendimi e le modalità Da solo e 1 contro 1" width="330" />
 </p>
 
 ## Come si gioca
@@ -36,7 +36,7 @@ Un trivia nativo Android, in italiano, per chi ama chiedersi «ma sarà davvero 
 | Modalità | La sfida |
 | --- | --- |
 | **In solitaria** | Tu, dieci tentativi e un po’ d’intuito. Una partita interrotta si riprende dalla home. |
-| **1 contro 1 locale** | Due giocatori o squadre, una classifica e dieci tentativi ciascuno. Tabelloni indipendenti, passaggio del telefono con risposte nascoste e confronto finale. Vince chi ne trova di più; è possibile pareggiare. |
+| **1 contro 1 alla cieca** | Scrivete i nomi dei due giocatori, scegliete una classifica e date dieci risposte ciascuno **senza sapere se sono giuste**. Le risposte restano sigillate fino a quando entrambi hanno finito; poi la **resa dei conti** apre le buste una alla volta. Vince chi ne trova di più; è possibile pareggiare. |
 
 Record, statistiche, preferenze e piccoli traguardi restano sul dispositivo. Nessun account, pubblicità o acquisto in app.
 
@@ -44,8 +44,10 @@ Record, statistiche, preferenze e piccoli traguardi restano sul dispositivo. Nes
 
 - **Sorprendimi:** una scelta casuale animata che rispetta categoria e modalità, dà precedenza alle classifiche non completate ed evita ripetizioni durante il ciclo.
 - **Un benvenuto in tre scene:** spiega il gioco al primo avvio; puoi saltarlo e rivederlo dalle impostazioni.
-- **Grafica originale:** logo creato con ImageGen, avorio, bosco e lime, carte che si girano, una barra flottante e coriandoli per le tue scoperte.
-- **Movimenti curati:** passaggi tra pagine senza lampeggi, pannelli che scorrono e si chiudono anche trascinandoli, pulsanti e interruttori animati. Le classifiche scorrono con inerzia e disegnano soltanto le schede visibili.
+- **Grafica notturna:** cielo animato con bagliori lime, lilla e acquamarina, schede in vetro scuro, carte che si girano, esplosioni di particelle e coriandoli per le tue scoperte. Il logo originale è stato creato con ImageGen.
+- **Struttura chiara:** tre sezioni, **Gioca**, **Classifiche** e **Profilo**. Ogni classifica apre una scheda con fonte, anno e i pulsanti per giocarla da soli o in due.
+- **Movimenti curati:** entrate scaglionate, passaggi tra pagine senza lampeggi, pannelli che scorrono e si chiudono anche trascinandoli, una barra di navigazione che compare e scompare. Le classifiche scorrono con inerzia e disegnano soltanto le schede visibili.
+- **Profilo con livelli:** ogni scoperta fa salire di livello, da Curioso a Leggenda, insieme a statistiche, classifiche esplorate e sei traguardi.
 - **Controlli Android:** tastiera nativa, suoni, feedback aptico, controlli per l’accessibilità e animazioni ridotte.
 
 Il simbolo originale, il prompt e le informazioni sulla sua integrazione sono in [branding/](branding/README.md).
@@ -70,7 +72,7 @@ Puoi cercare una nuova versione dalle **Impostazioni di Topperia**. L’app cont
 
 Il download parte dopo la tua conferma. Topperia verifica versione, integrità e firma del pacchetto, quindi propone **Installa**. L’aggiornamento passa sempre dalla conferma dell’installer Android; se necessario, Android richiede prima il consenso per installare aggiornamenti da Topperia. I dettagli sulle richieste di rete e sui dati locali sono nella [privacy](docs/PRIVACY.md).
 
-Se una versione precedente resta ferma su **Installa**, scarica e apri l’APK dell’ultima release una volta: la **1.1.5** corregge la perdita della richiesta del permesso Android. Firma, partite e preferenze restano compatibili.
+Se una versione precedente resta ferma su **Installa**, scarica e apri l’APK dell’ultima release una volta: la **1.1.5** ha corretto la perdita della richiesta del permesso Android. Firma, partite e preferenze restano compatibili.
 
 ## Compila il progetto
 

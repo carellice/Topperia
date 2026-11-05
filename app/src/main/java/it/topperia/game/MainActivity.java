@@ -14,13 +14,13 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
-        getWindow().setStatusBarColor(0xfff8f7f0);
-        getWindow().setNavigationBarColor(0xfff8f7f0);
-        getWindow().getDecorView().setSystemUiVisibility(android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        getWindow().setStatusBarColor(0xff11291f);
+        getWindow().setNavigationBarColor(0xff0a1712);
+        getWindow().getDecorView().setSystemUiVisibility(0);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         game = new TopperiaView(this);
         FrameLayout frame = new FrameLayout(this);
-        frame.setBackgroundColor(0xfff8f7f0);
+        frame.setBackground(new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, new int[] {0xff11291f, 0xff0a1712}));
         frame.addView(game, new FrameLayout.LayoutParams(-1,-1));
         if (Build.VERSION.SDK_INT >= 30) {
             getWindow().setDecorFitsSystemWindows(false);
