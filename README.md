@@ -44,7 +44,7 @@ Record, statistiche, preferenze e piccoli traguardi restano sul dispositivo. Nes
 
 - **Sorprendimi:** una scelta casuale animata che rispetta categoria e modalità, dà precedenza alle classifiche non completate ed evita ripetizioni durante il ciclo.
 - **Un benvenuto in tre scene:** spiega il gioco al primo avvio; puoi saltarlo e rivederlo dalle impostazioni.
-- **Grafica notturna:** cielo animato con bagliori lime, lilla e acquamarina, schede in vetro scuro, carte che si girano, esplosioni di particelle e coriandoli per le tue scoperte. Il logo originale è stato creato con ImageGen.
+- **Grafica notturna in 3D:** cielo animato, schede con spessore che si inclinano verso il dito, pulsanti a rilievo che affondano quando li premi, icone sferiche e caselle che ruotano in prospettiva. Esplosioni di particelle e coriandoli per le tue scoperte. Il logo originale è stato creato con ImageGen.
 - **Struttura chiara:** tre sezioni, **Gioca**, **Classifiche** e **Profilo**. Ogni classifica apre una scheda con fonte, anno e i pulsanti per giocarla da soli o in due.
 - **Movimenti curati:** entrate scaglionate, passaggi tra pagine senza lampeggi, pannelli che scorrono e si chiudono anche trascinandoli, una barra di navigazione che compare e scompare. Le classifiche scorrono con inerzia e disegnano soltanto le schede visibili.
 - **Profilo con livelli:** ogni scoperta fa salire di livello, da Curioso a Leggenda, insieme a statistiche, classifiche esplorate e sei traguardi.

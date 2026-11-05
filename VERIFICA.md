@@ -1,5 +1,13 @@
 # Verifiche di Topperia
 
+## Effetti 3D — 1.1.7
+
+Verifica del 6 novembre 2026 su emulatore Android 17, 1080 × 2424.
+
+- Controllati con schermate durante pressioni prolungate reali: inclinazione in prospettiva delle schede verso il dito, solo sulla scheda toccata; pulsanti e filtri che affondano sulla propria base; pulsante nativo di invio con stato premuto.
+- Flip in prospettiva catturato a metà rotazione su una risposta corretta. Icone, avatar, barra e interruttori con spessore e riflessi verificati su home, catalogo, partita e impostazioni.
+- Test Java e Android Lint superati. Nessuna prova su telefono fisico.
+
 ## Nuova grafica e sfida alla cieca — 1.1.6
 
 Verifica del 5 novembre 2026 su emulatore Android 17, 1080 × 2424.
