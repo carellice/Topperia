@@ -2,12 +2,12 @@
 <resources>
     <style name="BaseTheme.Topperia" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#DCF58D</item>
+        <item name="android:colorAccent">#FFD23F</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">#11291F</item>
-        <item name="android:navigationBarColor">#0A1712</item>
+        <item name="android:statusBarColor">#2B1463</item>
+        <item name="android:navigationBarColor">#160B33</item>
         <item name="android:windowActionModeOverlay">true</item>
-        <item name="android:windowBackground">#0A1712</item>
+        <item name="android:windowBackground">#160B33</item>
     </style>
     <style name="Theme.Topperia" parent="BaseTheme.Topperia" />
 </resources>

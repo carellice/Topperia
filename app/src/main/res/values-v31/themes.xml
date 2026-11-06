@@ -2,7 +2,7 @@
 <resources>
     <style name="Theme.Topperia" parent="BaseTheme.Topperia">
         <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:windowSplashScreenBackground">#0A1712</item>
+        <item name="android:windowSplashScreenBackground">#160B33</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
     </style>
 </resources>

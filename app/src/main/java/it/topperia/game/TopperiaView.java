@@ -6,8 +6,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
-import android.media.AudioManager;
-import android.media.ToneGenerator;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
@@ -32,6 +30,7 @@ import it.topperia.game.update.GitHubUpdater;
 import it.topperia.game.update.UpdateInfo;
 import it.topperia.game.update.UpdatePromptQueue;
 import it.topperia.game.ui.Motion;
+import it.topperia.game.ui.Sound;
 import java.util.*;
 
 /**
@@ -40,10 +39,11 @@ import java.util.*;
  * only text fields are real Android views, positioned on top of their drawn frames.
  */
 public final class TopperiaView extends ViewGroup {
-    private static final int BG=0xff0a1712, BG_TOP=0xff11291f, CARD=0xff152d25, CARD_HI=0xff1f3d34, SHEET=0xff11251e,
-        LINE=0x24ffffff, TEXT=0xfff2f7e9, MUTED=0xff9cb3a6, DIM=0xff5e7b6d, LIME=0xffdcf58d, TEAL=0xff7fdcc0,
-        LILAC=0xffc4b2f7, ORANGE=0xfff6b38a, PINK=0xfff39cc3, RED=0xffff8b84, INK=0xff0c2019, WHITE=0xffffffff;
-    private static final int[] ACCENTS={LIME,LILAC,ORANGE,TEAL,PINK};
+    // "Luna park at dusk": plum night, sunflower and tangerine for wins, aqua and coral for play.
+    private static final int BG=0xff160b33, BG_TOP=0xff2b1463, CARD=0xff261850, CARD_HI=0xff36256e, SHEET=0xff1f1245,
+        LINE=0x2effffff, TEXT=0xfffff6e8, MUTED=0xffbcaee0, DIM=0xff8170b0, SUN=0xffffd23f, TANGERINE=0xffff9a3c,
+        AQUA=0xff3ee6d0, CORAL=0xffff6f91, ORCHID=0xffc58cff, RED=0xffff5a5f, INK=0xff1e0b3d, WHITE=0xffffffff;
+    private static final int[] ACCENTS={SUN,AQUA,CORAL,TANGERINE,ORCHID};
     private static final float DOCK_SPACE=108, CARD_H=178;
     private final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.DITHER_FLAG);
     private final Paint logoPaint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG|Paint.DITHER_FLAG);
@@ -55,7 +55,8 @@ public final class TopperiaView extends ViewGroup {
     private final ArrayList<Hit> hits=new ArrayList<>();
     private final EditText input,nameOne,nameTwo;
     private final Button submit;
-    private ToneGenerator tones;
+    private final Sound sound=new Sound();
+    private boolean winPlayed=false;
     private final GitHubUpdater updater;
     private final UpdatePromptQueue updatePrompts;
     private UpdateInfo availableUpdate;
@@ -120,7 +121,7 @@ public final class TopperiaView extends ViewGroup {
         submit=new Button(context){@Override protected void drawableStateChanged(){super.drawableStateChanged();int depth=(int)dp(4);if(isPressed())setPadding(0,depth,0,0);else setPadding(0,0,0,depth);}};
         submit.setText("↑"); submit.setTextSize(25); submit.setTextColor(INK); submit.setTypeface(bold);
         submit.setAllCaps(false); submit.setPadding(0,0,0,0); submit.setMinWidth(0); submit.setMinimumWidth(0); submit.setMinHeight(0); submit.setMinimumHeight(0);
-        submit.setBackground(pushable(LIME,(int)dp(4)));
+        submit.setBackground(pushable(SUN,(int)dp(4)));
         submit.setStateListAnimator(null);
         submit.setContentDescription("Conferma risposta"); submit.setOnClickListener(v->guess()); addView(submit);
         nameOne=field(context,"Giocatore 1","Nome del primo giocatore",16,EditorInfo.IME_ACTION_NEXT);
@@ -142,7 +143,7 @@ public final class TopperiaView extends ViewGroup {
         e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_CAP_WORDS|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         e.setImeOptions(action|EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         e.setContentDescription(description);
-        if(android.os.Build.VERSION.SDK_INT>=29){GradientDrawable cursor=new GradientDrawable();cursor.setColor(LIME);cursor.setSize((int)dp(2),(int)dp(20));e.setTextCursorDrawable(cursor);}
+        if(android.os.Build.VERSION.SDK_INT>=29){GradientDrawable cursor=new GradientDrawable();cursor.setColor(SUN);cursor.setSize((int)dp(2),(int)dp(20));e.setTextCursorDrawable(cursor);}
         e.setOnFocusChangeListener((v,focused)->invalidate());
         e.addTextChangedListener(new TextWatcher(){
             @Override public void beforeTextChanged(CharSequence s,int start,int count,int after){}
@@ -187,8 +188,8 @@ public final class TopperiaView extends ViewGroup {
     }
     private void offerInstall(UpdateInfo info){updatePrompts.post(()->updatePrompts.show(dialog().setTitle("Tutto pronto per aggiornare").setMessage("Topperia "+info.versionName+" è stata scaricata e verificata. Android ti chiederà conferma per installarla.").setNegativeButton("Più tardi",null).setPositiveButton("Installa",(d,w)->updater.installDownloaded())));}
     private void updateAction(){if(updater.isBusy())return;if(updateReady){offerInstall(availableUpdate);return;}if(availableUpdate!=null){offerUpdate(availableUpdate);return;}manualUpdateCheck=true;updater.check(true);}
-    public void resume(){readMotionPreference();invalidate();updatePrompts.onResume();updater.onResume();updater.check(false);}
-    public void pause(){updatePrompts.onPause();stopScroll();clearPress();}
+    public void resume(){sound.music(store.option("music",true));readMotionPreference();invalidate();updatePrompts.onResume();updater.onResume();updater.check(false);}
+    public void pause(){sound.music(false);updatePrompts.onPause();stopScroll();clearPress();}
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);updatePrompts.onWindowFocusChanged(focused);}
 
     private float dp(float x){return x*getResources().getDisplayMetrics().density;}
@@ -221,7 +222,7 @@ public final class TopperiaView extends ViewGroup {
         if(dockPage(page)){navFrom=navPosition();navTarget=pageIndex(page);navAt=now();}
         float dock=dockPage(page)?1:0;if(dock!=dockTarget){dockFrom=dockProgress();dockTarget=dock;dockAt=now();}
         if(page.equals("duel")){nameOne.setText(storedName("player1","Giocatore 1"));nameTwo.setText(storedName("player2","Giocatore 2"));}
-        if(page.equals("reveal")){revealAt=now()+300;revealCount=0;}
+        if(page.equals("reveal")){revealAt=now()+300;revealCount=0;winPlayed=false;}
         screen=page;scroll=0;maxScroll=0;entered=pageAt=now();modal="";sheetClosing=false;sheetDrag=0;pageShift=0;
         hits.clear();accessibilityFocus=-1;hovered=-1;hideKeyboard();updateInput();requestLayout();invalidate();
         activity.setTitle("Topperia · "+pageTitle(page));
@@ -238,9 +239,9 @@ public final class TopperiaView extends ViewGroup {
         nameOne.setVisibility(names?VISIBLE:GONE);nameTwo.setVisibility(names?VISIBLE:GONE);
     }
     private void hideKeyboard(){input.clearFocus();nameOne.clearFocus();nameTwo.clearFocus();((InputMethodManager)activity.getSystemService(Context.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(getWindowToken(),0);}
-    private void feedback(boolean good){if(store.option("haptic",true)){int effect=android.os.Build.VERSION.SDK_INT>=30?(good?HapticFeedbackConstants.CONFIRM:HapticFeedbackConstants.REJECT):(good?HapticFeedbackConstants.KEYBOARD_TAP:HapticFeedbackConstants.LONG_PRESS);performHapticFeedback(effect);}tone(good?ToneGenerator.TONE_PROP_ACK:ToneGenerator.TONE_PROP_NACK,good?120:90);}
-    private void sealFeedback(){if(store.option("haptic",true))performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);tone(ToneGenerator.TONE_PROP_BEEP,60);}
-    private void tone(int tone,int duration){if(!store.option("sound",true))return;try{if(tones==null)tones=new ToneGenerator(AudioManager.STREAM_MUSIC,35);tones.startTone(tone,duration);}catch(RuntimeException ignored){}}
+    private void feedback(boolean good){if(store.option("haptic",true)){int effect=android.os.Build.VERSION.SDK_INT>=30?(good?HapticFeedbackConstants.CONFIRM:HapticFeedbackConstants.REJECT):(good?HapticFeedbackConstants.KEYBOARD_TAP:HapticFeedbackConstants.LONG_PRESS);performHapticFeedback(effect);}sfx(good?Sound.HIT:Sound.MISS);}
+    private void sealFeedback(){if(store.option("haptic",true))performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);sfx(Sound.SEAL);}
+    private void sfx(int id){if(store.option("sound",true))sound.play(id);}
     private void tell(String text){notice=text;noticeAt=now();invalidate();announceForAccessibility(text);}
 
     private void start(RankedList list){
@@ -253,7 +254,7 @@ public final class TopperiaView extends ViewGroup {
         if(session!=null&&session.phase()!=GameSession.Phase.FINISHED){dialog().setTitle("Una nuova sorpresa?").setMessage("La classifica casuale sostituirà la partita salvata.").setNegativeButton("Annulla",null).setPositiveButton("Sorprendimi",(d,w)->{session=null;save();randomRound(category);}).show();return;}
         ArrayList<RankedList> pool=new ArrayList<>();Set<String> played=new HashSet<>();for(RankedList r:rankings){if(category.equals("Tutte")||r.category.equals(category))pool.add(r);if(store.option("played_"+r.id,false))played.add(r.id);}
         if(pool.isEmpty()){tell("In questa categoria non ci sono ancora classifiche.");return;}
-        queuedRanking=picker.pick(pool,played,store.prefs.getString("last_ranking",""));shuffleReturn=screen;show("shuffle");int generation=++shuffleGeneration;
+        queuedRanking=picker.pick(pool,played,store.prefs.getString("last_ranking",""));shuffleReturn=screen;show("shuffle");sfx(Sound.SHUFFLE);int generation=++shuffleGeneration;
         postDelayed(()->{if(screen.equals("shuffle")&&generation==shuffleGeneration&&queuedRanking!=null){RankedList selected=queuedRanking;queuedRanking=null;start(selected);}},reduced()?250:2350);
     }
     private void openOnboarding(){onboardingReturn=screen;onboardingReplay=true;onboardingStep=0;show("onboarding");}
@@ -297,7 +298,7 @@ public final class TopperiaView extends ViewGroup {
         if(session.phase()!=GameSession.Phase.PLAYING){
             hideKeyboard();finishedAt=now();
             if(blind)notice="";
-            if(session.phase()==GameSession.Phase.FINISHED)record();else{pageDirection=1;pageAt=entered=now();}
+            if(session.phase()==GameSession.Phase.FINISHED){record();if(!blind)postDelayed(()->sfx(Sound.WIN),500);}else{pageDirection=1;pageAt=entered=now();}
             updateInput();requestLayout();
         }
         save();invalidate();
@@ -307,7 +308,7 @@ public final class TopperiaView extends ViewGroup {
     private String position(int index){return session.ranking.id.startsWith("skyscrapers")&&(index==7||index==8)?"8=":""+(index+1);}
     public void save(){android.content.SharedPreferences.Editor edit=store.prefs.edit();if(session!=null){edit.putString("session",session.serialize()).putString("ranking",session.ranking.id).putBoolean("recorded",recorded);}else{edit.remove("session").remove("ranking");}edit.apply();}
     private void restore(){String id=store.prefs.getString("ranking","");for(RankedList list:rankings)if(list.id.equals(id)){try{session=GameSession.restore(list,store.prefs.getString("session",""));recorded=store.prefs.getBoolean("recorded",false);}catch(RuntimeException ignored){session=null;}break;}}
-    public void dispose(){updatePrompts.close();stopScroll();previousPage=null;shuffleGeneration++;queuedRanking=null;updater.close();if(tones!=null)tones.release();}
+    public void dispose(){updatePrompts.close();stopScroll();previousPage=null;shuffleGeneration++;queuedRanking=null;updater.close();sound.release();}
     public void goBack(){
         if(!modal.isEmpty()){closeSheet();}
         else if(screen.equals("onboarding")){if(onboardingStep>0)onboardingPage(onboardingStep-1);else if(onboardingReplay)finishOnboarding();else activity.finish();}
@@ -362,7 +363,7 @@ public final class TopperiaView extends ViewGroup {
         if(gradientHeight!=H){
             gradientHeight=H;backdropShader=new LinearGradient(0,0,0,H,BG_TOP,BG,Shader.TileMode.CLAMP);
             dockFade=new LinearGradient(0,H-170,0,H-70,BG&0xffffff,BG,Shader.TileMode.CLAMP);
-            int[] colors={0x30dcf58d,0x24b39cf0,0x247fdcc0};blobs=new RadialGradient[3];
+            int[] colors={0x34ff6f91,0x2c3ee6d0,0x30b86bff};blobs=new RadialGradient[3];
             for(int i=0;i<3;i++)blobs[i]=new RadialGradient(0,0,1,colors[i],colors[i]&0xffffff,Shader.TileMode.CLAMP);
         }
         p.setStyle(Paint.Style.FILL);p.setColor(0xff000000);p.setShader(backdropShader);c.drawRect(0,0,400,H,p);
@@ -372,7 +373,20 @@ public final class TopperiaView extends ViewGroup {
             shaderMatrix.setScale(r,r);shaderMatrix.postTranslate(x,y);blobs[i].setLocalMatrix(shaderMatrix);p.setShader(blobs[i]);c.drawCircle(x,y,r,p);
         }
         p.setShader(null);
-        for(int i=0;i<18;i++){float x=(i*97+31)%380+10,y=((i*173+57)%997)/997f*H;float twinkle=.5f+.5f*(float)Math.sin(t*1.1f+i*1.7f);circle(c,x,y,.6f+twinkle*.9f,(Math.round(80*twinkle)<<24)|0xffffff);}
+        for(int i=0;i<12;i++){float x=(i*97+31)%380+10,y=((i*173+57)%997)/997f*H;float twinkle=.5f+.5f*(float)Math.sin(t*1.1f+i*1.7f);circle(c,x,y,.6f+twinkle*.9f,(Math.round(80*twinkle)<<24)|0xffffff);}
+        // Party confetti: rings, triangles, squiggles and plus signs float up slowly.
+        for(int i=0;i<14;i++){
+            float span=H+60,x=(i*71+23)%370+15+(float)Math.sin(t*.5f+i)*14,y=span-((t*(7+i%4*3)+i*131)%span)-30;
+            int color=(0x38<<24)|(ACCENTS[i%5]&0xffffff);
+            c.save();c.translate(x,y);c.rotate(t*(i%2==0?18:-14)+i*40);
+            switch(i%4){
+                case 0:ringStroke(c,0,0,6+i%3*2,color,2.4f);break;
+                case 1:iconPath.rewind();iconPath.moveTo(0,-8);iconPath.lineTo(7,5);iconPath.lineTo(-7,5);iconPath.close();p.setShader(null);p.setColor(a(color));p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2.4f);p.setStrokeJoin(Paint.Join.ROUND);c.drawPath(iconPath,p);p.setStyle(Paint.Style.FILL);break;
+                case 2:iconPath.rewind();iconPath.moveTo(-10,0);iconPath.cubicTo(-6,-7,-3,7,0,0);iconPath.cubicTo(3,-7,6,7,10,0);p.setShader(null);p.setColor(a(color));p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2.6f);p.setStrokeCap(Paint.Cap.ROUND);c.drawPath(iconPath,p);p.setStyle(Paint.Style.FILL);break;
+                default:line(c,-6,0,6,0,color,2.6f);line(c,0,-6,0,6,color,2.6f);break;
+            }
+            c.restore();
+        }
         if(!reduced())frameAnimating=true;
     }
 
@@ -393,7 +407,7 @@ public final class TopperiaView extends ViewGroup {
 
     private void stopScroll(){scroller.abortAnimation();if(velocity!=null){velocity.recycle();velocity=null;}activePointer=-1;scrollingGesture=false;}
     private float sheetProgress(){return reduced()?sheetTarget:Motion.lerp(sheetFrom,sheetTarget,Motion.ease(Motion.progress(now(),sheetAt,sheetClosing?240:380)));}
-    private float sheetHeight(){return Math.min(H-24,modal.equals("settings")?592:modal.equals("rules")?548:492);}
+    private float sheetHeight(){return Math.min(H-24,modal.equals("settings")?658:modal.equals("rules")?548:492);}
     private float sheetTop(){return Math.max(24,H-sheetHeight())+(1-sheetProgress())*sheetHeight()+sheetDrag;}
     private void openSheet(String name){readMotionPreference();stopScroll();clearPress();modal=name;sheetFrom=0;sheetTarget=1;sheetAt=now();sheetDrag=0;sheetClosing=false;hits.clear();accessibilityFocus=hovered=-1;hideKeyboard();updateInput();invalidate();sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);}
     private void closeSheet(){if(modal.isEmpty()||sheetClosing)return;sheetFrom=Math.max(0,sheetProgress()-sheetDrag/sheetHeight());sheetTarget=0;sheetAt=now();sheetClosing=true;sheetDrag=0;clearPress();invalidate();}
@@ -419,49 +433,49 @@ public final class TopperiaView extends ViewGroup {
     private void roundButton(Canvas c,String symbol,float cx,float cy,String label,Runnable action){float sink=3.5f*pressAmount(cx-26,cy-26,52,52);circle(c,cx,cy+7,22,0x50000000);circle(c,cx,cy+3.5f,22,darken(CARD_HI,.55f));orb(c,cx,cy+sink,22,CARD_HI);ringStroke(c,cx,cy+sink,22,LINE,1);icon(c,symbol,cx-10,cy-10+sink,20,TEXT);hit(cx-26,cy-26,52,52,label,action);}
     private String greeting(){int hour=java.time.LocalTime.now(java.time.ZoneId.of("Europe/Rome")).getHour();return hour<5?"NOTTE DA CURIOSI":hour<12?"BUONGIORNO, MENTE CURIOSA":hour<18?"BUON POMERIGGIO, MENTE CURIOSA":"BUONASERA, MENTE CURIOSA";}
     private int accent(String category){int index=categories.indexOf(category);return ACCENTS[Math.floorMod(index-1,ACCENTS.length)];}
-    private int playerColor(int index){return index==0?LIME:LILAC;}
+    private int playerColor(int index){return index==0?SUN:AQUA;}
     private int playedCount(){int played=0;for(RankedList r:rankings)if(store.option("played_"+r.id,false))played++;return played;}
 
     // ——— Onboarding ———
     private void onboarding(Canvas c){
         if(!reduced())frameAnimating=true;
         maxScroll=0;brand(c,24,44,.9f);pill(c,onboardingReplay?"Chiudi":"Salta",304,18,72,36,CARD_HI,TEXT,12);hit(298,10,84,52,"Salta introduzione",this::finishOnboarding);
-        for(int i=0;i<3;i++){float w=i==onboardingStep?44:16;float x=24;for(int j=0;j<i;j++)x+=(j==onboardingStep?44:16)+6;rect(c,x,76,w,5,2.5f,i<=onboardingStep?LIME:CARD_HI);}
+        for(int i=0;i<3;i++){float w=i==onboardingStep?44:16;float x=24;for(int j=0;j<i;j++)x+=(j==onboardingStep?44:16)+6;rect(c,x,76,w,5,2.5f,i<=onboardingStep?SUN:CARD_HI);}
         float artHeight=Math.min(300,Math.max(170,H*.34f)),artY=104+artHeight/2;
         float contentScale=artHeight/300;
         c.save();c.translate(200,artY);c.scale(contentScale,contentScale);
         float sway=(float)Math.sin(anim()*1.5f)*5;
-        glow(c,0,0,170,onboardingStep==1?0x50c4b2f7:0x48dcf58d);
+        glow(c,0,0,170,onboardingStep==1?0x503ee6d0:0x48ffd23f);
         if(onboardingStep==0){
             circle(c,0,5,132,0x14ffffff);
             for(int i=0;i<8;i++){double a=i*Math.PI/4+anim()*.4;float rr=150+(float)Math.sin(anim()*2+i)*6;star(c,(float)Math.cos(a)*rr,(float)Math.sin(a)*rr*.82f,i%2==0?6:4,ACCENTS[i%5]);}
             c.save();c.translate(0,sway-4);c.rotate((float)Math.sin(anim()*.7f)*3);rotate3d(c,0,0,(float)Math.sin(anim()*.9f)*7,(float)Math.sin(anim()*.6f)*16);logoMark(c,-150,-150,300);c.restore();
-            pill(c,"10 POSTI. UN MONDO INTERO.",-118,124,236,30,LIME,INK,9.5f);
+            pill(c,"10 POSTI. UN MONDO INTERO.",-118,124,236,30,SUN,INK,9.5f);
         }else if(onboardingStep==1){
-            for(int i=0;i<3;i++){c.save();c.rotate((i-1)*7);rect(c,-105,-95+i*11,210,93,20,i==2?CARD_HI:0x33c4b2f7);c.restore();}
+            for(int i=0;i<3;i++){c.save();c.rotate((i-1)*7);rect(c,-105,-95+i*11,210,93,20,i==2?CARD_HI:0x333ee6d0);c.restore();}
             float cycle=reduced()?3.4f:(now()-entered)%5200/1000f;
             float turn=reduced()?1:Math.min(1,Math.max(0,(cycle-1.65f)/.55f));boolean solved=turn>=.5f;
-            c.save();flip3d(c,0,-25,turn,true);rect(c,-111,-73,222,104,21,solved?darken(TEAL,.5f):darken(CARD_HI,.55f));if(solved)gradRect(c,-111,-77,222,104,21,LIME,TEAL);else rect(c,-111,-77,222,104,21,CARD_HI);circle(c,-79,-25,18,solved?INK:0x22ffffff);center(c,solved?"1":"?",-79,-19,18,solved?LIME:MUTED,bold);
-            text(c,solved?"Repubblica Ceca":"Chi c’è lassù?",-49,-30,16,solved?INK:TEXT,bold);text(c,solved?"148,8 litri per abitante":"Una casella da scoprire",-49,-7,10,solved?0xaa0c2019:MUTED,regular);c.restore();
-            c.save();c.translate(0,sway);rect(c,-127,64,254,60,22,CARD_HI);ringRect(c,-127,64,254,60,22,0x66dcf58d);icon(c,"spark",-111,82,22,LIME);String written=cycle<.5f?"La tua idea…":cycle<1?"Ce":cycle<1.4f?"Cech":"Cechia";text(c,written,-77,101,19,TEXT,bold);circle(c,99,94,20,LIME);center(c,solved?"✓":"↑",99,101,21,INK,bold);c.restore();
-            if(solved){star(c,124,-81,10,LIME);star(c,-126,-53,6,ORANGE);pill(c,"DENTRO!",-47,-121,94,26,LIME,INK,10);}
+            c.save();flip3d(c,0,-25,turn,true);rect(c,-111,-73,222,104,21,solved?darken(TANGERINE,.5f):darken(CARD_HI,.55f));if(solved)gradRect(c,-111,-77,222,104,21,SUN,TANGERINE);else rect(c,-111,-77,222,104,21,CARD_HI);circle(c,-79,-25,18,solved?INK:0x22ffffff);center(c,solved?"1":"?",-79,-19,18,solved?SUN:MUTED,bold);
+            text(c,solved?"Repubblica Ceca":"Chi c’è lassù?",-49,-30,16,solved?INK:TEXT,bold);text(c,solved?"148,8 litri per abitante":"Una casella da scoprire",-49,-7,10,solved?0xaa1e0b3d:MUTED,regular);c.restore();
+            c.save();c.translate(0,sway);rect(c,-127,64,254,60,22,CARD_HI);ringRect(c,-127,64,254,60,22,0x66ffd23f);icon(c,"spark",-111,82,22,SUN);String written=cycle<.5f?"La tua idea…":cycle<1?"Ce":cycle<1.4f?"Cech":"Cechia";text(c,written,-77,101,19,TEXT,bold);circle(c,99,94,20,SUN);center(c,solved?"✓":"↑",99,101,21,INK,bold);c.restore();
+            if(solved){star(c,124,-81,10,SUN);star(c,-126,-53,6,CORAL);pill(c,"DENTRO!",-47,-121,94,26,SUN,INK,10);}
         }else{
             float k=(float)(1-Math.cos(anim()*1.6))/2;
-            avatar(c,-92,-6+sway,40,"A",LIME);avatar(c,92,-6-sway,40,"B",LILAC);
-            for(int i=0;i<3;i++){c.save();c.translate(-92+(i-1)*28,74);c.rotate((i-1)*10);envelope(c,LIME);c.restore();c.save();c.translate(92+(i-1)*28,74);c.rotate((i-1)*10);envelope(c,LILAC);c.restore();}
+            avatar(c,-92,-6+sway,40,"A",SUN);avatar(c,92,-6-sway,40,"B",AQUA);
+            for(int i=0;i<3;i++){c.save();c.translate(-92+(i-1)*28,74);c.rotate((i-1)*10);envelope(c,SUN);c.restore();c.save();c.translate(92+(i-1)*28,74);c.rotate((i-1)*10);envelope(c,AQUA);c.restore();}
             c.save();c.translate(0,-6);c.rotate(-8+16*k);vsBadge(c,0,0,30);c.restore();
-            star(c,-14,-112,10,ORANGE);star(c,124,-80,7,LIME);star(c,-128,-70,6,PINK);
+            star(c,-14,-112,10,CORAL);star(c,124,-80,7,SUN);star(c,-128,-70,6,ORCHID);
         }
         c.restore();
         float textY=104+artHeight+46;
         String[] first={"Il mondo ha","Un’idea. Un posto","Sfida un amico,"},second={"dieci posti.","in classifica.","alla cieca."};
-        text(c,first[onboardingStep],24,textY,33,TEXT,heavy);text(c,second[onboardingStep],24,textY+39,33,onboardingStep==2?LILAC:LIME,heavy);
+        text(c,first[onboardingStep],24,textY,33,TEXT,heavy);text(c,second[onboardingStep],24,textY+39,33,onboardingStep==2?AQUA:SUN,heavy);
         String[] detail={"Ogni Top 10 nasconde risposte reali. A te il piacere di scoprirle.","Hai 10 tentativi. Scrivi una risposta: se c’è, scopri subito il suo posto.","Stesso telefono, stessa classifica. Le risposte restano sigillate fino alla resa dei conti finale."};
         wrap(c,detail[onboardingStep],25,textY+76,350,15,22,MUTED,regular,3);
         read(24,textY-30,352,160,first[onboardingStep]+" "+second[onboardingStep]+" "+detail[onboardingStep]);
         float footerY=H-86;
         if(onboardingStep>0){circle(c,51,footerY+28,27,CARD_HI);icon(c,"back",41,footerY+18,20,TEXT);hit(24,footerY,54,56,"Pagina precedente",()->onboardingPage(onboardingStep-1));}
-        button(c,onboardingStep==2?"Esplora Topperia  →":"Continua  →",onboardingStep>0?92:24,footerY,onboardingStep>0?284:352,56,LIME,INK,()->onboardingPage(onboardingStep+1));
+        button(c,onboardingStep==2?"Esplora Topperia  →":"Continua  →",onboardingStep>0?92:24,footerY,onboardingStep>0?284:352,56,SUN,INK,()->onboardingPage(onboardingStep+1));
         center(c,onboardingStep==2?"LA PROSSIMA SCOPERTA È TUA":"Scorri per continuare",200,H-14,9,DIM,bold);
     }
     private void envelope(Canvas c,int color){rect(c,-18,-13,36,26,6,color);line(c,-16,-11,0,2,INK,1.6f);line(c,16,-11,0,2,INK,1.6f);}
@@ -480,7 +494,7 @@ public final class TopperiaView extends ViewGroup {
         if(!reduced())frameAnimating=true;
         maxScroll=0;roundButton(c,"back",46,36,"Annulla scelta casuale",this::goBack);brand(c,150,44,.82f);
         float cy=H*.42f;long elapsed=now()-entered;float t=reduced()?1:Math.min(1,elapsed/2100f);
-        glow(c,200,cy,190,0x44dcf58d);
+        glow(c,200,cy,190,0x44ffd23f);
         RankedList chosen=queuedRanking;
         if(t<.6f&&!reduced()){
             float spin=elapsed*.32f,spread=Motion.ease(Math.min(1,t/.2f))*(1-Motion.ease(Math.max(0,(t-.4f)/.2f)))*86;
@@ -491,16 +505,16 @@ public final class TopperiaView extends ViewGroup {
             c.save();c.translate(200,cy);flip3d(c,0,0,reduced()?1:k,false);
             rect(c,-w/2,-h/2+6,w,h,22,0x55000000);
             if(front&&chosen!=null){
-                rect(c,-w/2,-h/2,w,h,22,0xfffbfdf3);iconBadge(c,chosen.icon,-w/2+18,-h/2+18,46,accent(chosen.category));
+                rect(c,-w/2,-h/2,w,h,22,0xfffff6e8);iconBadge(c,chosen.icon,-w/2+18,-h/2+18,46,accent(chosen.category));
                 text(c,chosen.category.toUpperCase(Locale.ITALIAN),-w/2+76,-h/2+46,9.5f,DIM,bold);
                 wrap(c,chosen.title,-w/2+18,-h/2+96,w-36,17,22,INK,heavy,3);
-            }else{rect(c,-w/2,-h/2,w,h,22,LIME);center(c,"?",0,12,34,INK,heavy);}
+            }else{rect(c,-w/2,-h/2,w,h,22,SUN);center(c,"?",0,12,34,INK,heavy);}
             c.restore();
             if(front)for(int i=0;i<9;i++){double a=i*Math.PI*2/9;float d=150+Motion.ease(Math.min(1,(t-.8f)*5))*30;star(c,200+(float)Math.cos(a)*d,cy+(float)Math.sin(a)*d*.7f,4+i%3*2,ACCENTS[i%5]);}
         }
         boolean revealed=t>=.8f||reduced();
         center(c,revealed?"Ecco la tua Top 10!":"La curiosità decide…",200,cy+178,27,TEXT,heavy);center(c,revealed?"Preparati a scalare la classifica.":"Mescolo le classifiche per te.",200,cy+208,14,MUTED,regular);
-        for(int i=0;i<3;i++)circle(c,184+i*16,cy+242,3.5f,reduced()||((now()-entered)/220)%3==i?LIME:CARD_HI);
+        for(int i=0;i<3;i++)circle(c,184+i*16,cy+242,3.5f,reduced()||((now()-entered)/220)%3==i?SUN:CARD_HI);
     }
 
     // ——— Home ———
@@ -508,15 +522,15 @@ public final class TopperiaView extends ViewGroup {
         pageStart(c);
         float o=push(c,0);topBar(c);pop(c,o);
         o=push(c,1);
-        text(c,greeting(),24,98,10.5f,LIME,bold);
-        text(c,"Il mondo è",22,142,40,TEXT,heavy);text(c,"una",22,188,40,TEXT,heavy);text(c,"Top 10.",22+measure("una ",40,heavy),188,40,LIME,heavy);
+        text(c,greeting(),24,98,10.5f,SUN,bold);
+        text(c,"Il mondo è",22,142,40,TEXT,heavy);text(c,"una",22,188,40,TEXT,heavy);text(c,"Top 10.",22+measure("una ",40,heavy),188,40,SUN,heavy);
         pop(c,o);
         float y=214;
         if(session!=null&&session.phase()!=GameSession.Phase.FINISHED){o=push(c,2);resumeCard(c,24,y,352,84);pop(c,o);y+=100;}
         o=push(c,3);surprise(c,24,y,352,198);pop(c,o);y+=222;
         o=push(c,4);text(c,"Come vuoi giocare?",24,y+6,20,TEXT,bold);pop(c,o);y+=24;
-        o=push(c,5);modeTile(c,24,y,171,206,LIME,"solo","Da solo","Tu contro la classifica, con 10 tentativi.",()->choose(GameSession.Mode.SOLO));pop(c,o);
-        o=push(c,6);modeTile(c,205,y,171,206,LILAC,"duel","1 contro 1","Due giocatori, risposte alla cieca.",()->choose(GameSession.Mode.DUEL));pop(c,o);
+        o=push(c,5);modeTile(c,24,y,171,206,SUN,"solo","Da solo","Tu contro la classifica, con 10 tentativi.",()->choose(GameSession.Mode.SOLO));pop(c,o);
+        o=push(c,6);modeTile(c,205,y,171,206,AQUA,"duel","1 contro 1","Due giocatori, risposte alla cieca.",()->choose(GameSession.Mode.DUEL));pop(c,o);
         y+=230;
         RankedList day=daily();
         o=push(c,7);text(c,"CURIOSITÀ DEL GIORNO",24,y,10,MUTED,bold);rankingRow(c,24,y+14,352,94,day,()->openDetail(day));pop(c,o);y+=130;
@@ -526,25 +540,25 @@ public final class TopperiaView extends ViewGroup {
     }
     private void resumeCard(Canvas c,float x,float y,float w,float h){
         pressTransform(c,x,y,w,h);
-        card(c,x,y,w,h,24);c.save();clipRound(c,x,y,w,h,24);glow(c,x+40,y+h/2,90,0x40dcf58d);c.restore();ringRect(c,x,y,w,h,24,0x66dcf58d);
+        card(c,x,y,w,h,24);c.save();clipRound(c,x,y,w,h,24);glow(c,x+40,y+h/2,90,0x40ffd23f);c.restore();ringRect(c,x,y,w,h,24,0x66ffd23f);
         GameSession.PlayerState player=session.currentPlayer();boolean handoff=session.phase()==GameSession.Phase.HANDOFF;
-        ring(c,x+42,y+h/2,21,5,player.attemptsUsed()/10f,session.isBlind()?playerColor(session.activePlayerIndex()):LIME,CARD_HI);
+        ring(c,x+42,y+h/2,21,5,player.attemptsUsed()/10f,session.isBlind()?playerColor(session.activePlayerIndex()):SUN,CARD_HI);
         center(c,""+player.attemptsUsed(),x+42,y+h/2+6,15,TEXT,heavy);
-        text(c,handoff?"SFIDA IN PAUSA":"RIPRENDI LA PARTITA",x+78,y+28,9.5f,LIME,bold);
+        text(c,handoff?"SFIDA IN PAUSA":"RIPRENDI LA PARTITA",x+78,y+28,9.5f,SUN,bold);
         fit(c,session.ranking.title,x+78,y+50,w-140,15,TEXT,bold);
         fit(c,session.isBlind()?(handoff?"Tocca a "+session.player(1).name:"Turno di "+player.name+" · alla cieca"):player.score()+" scoperte · "+player.attemptsRemaining()+" tentativi",x+78,y+69,w-140,11.5f,MUTED,regular);
-        circle(c,x+w-34,y+h/2,20,LIME);icon(c,"play",x+w-43,y+h/2-9,18,INK);
+        circle(c,x+w-34,y+h/2,20,SUN);icon(c,"play",x+w-43,y+h/2-9,18,INK);
         c.restore();hit(x,y,w,h,"Riprendi partita",()->show("game"));
     }
     private void surprise(Canvas c,float x,float y,float w,float h){
         pressTransform(c,x,y,w,h);
-        rect(c,x,y+6,w,h,28,0x55000000);gradRect(c,x,y,w,h,28,LIME,TEAL);
+        rect(c,x,y+6,w,h,28,0x55000000);gradRect(c,x,y,w,h,28,SUN,TANGERINE);
         c.save();clipRound(c,x,y,w,h,28);
-        circle(c,x+w-60,y+20,90,0x22ffffff);circle(c,x+w-20,y+h,70,0x1a0c2019);
-        pill(c,"LASCIA FARE AL CASO",x+18,y+18,148,24,0x260c2019,INK,8.5f);
+        circle(c,x+w-60,y+20,90,0x22ffffff);circle(c,x+w-20,y+h,70,0x1a1e0b3d);
+        pill(c,"LASCIA FARE AL CASO",x+18,y+18,148,24,0x261e0b3d,INK,8.5f);
         text(c,"Una Top 10",x+20,y+82,27,INK,heavy);text(c,"a sorpresa.",x+20,y+114,27,INK,heavy);
-        text(c,"Il dado sceglie, tu indovini.",x+20,y+138,12,0xbb0c2019,regular);
-        rect(c,x+18,y+h-50,146,36,18,INK);icon(c,"dice",x+32,y+h-41,18,LIME);text(c,"Sorprendimi",x+58,y+h-27,13,LIME,bold);
+        text(c,"Il dado sceglie, tu indovini.",x+20,y+138,12,0xbb1e0b3d,regular);
+        rect(c,x+18,y+h-50,146,36,18,INK);icon(c,"dice",x+32,y+h-41,18,SUN);text(c,"Sorprendimi",x+58,y+h-27,13,SUN,bold);
         fan(c,x+w-74,y+h/2+6);
         c.restore();c.restore();
         hit(x,y,w,h,"Sorprendimi: gioca una classifica casuale in solitaria",()->{pendingMode=GameSession.Mode.SOLO;randomRound("Tutte");});
@@ -552,18 +566,18 @@ public final class TopperiaView extends ViewGroup {
     private void fan(Canvas c,float cx,float cy){
         float t=anim(),sway=(float)Math.sin(t*1.3f)*5;
         c.save();c.translate(cx,cy);rotate3d(c,0,0,(float)Math.sin(t*.9f)*10,(float)Math.sin(t*.7f)*24);
-        c.save();c.rotate(-22+sway*.6f);rect(c,-34,-50,68,96,14,0x330c2019);rect(c,-36,-54,68,96,14,LILAC);c.restore();
-        c.save();c.rotate(-7+sway*.3f);rect(c,-36,-54,68,96,14,ORANGE);center(c,"?",-2,4,24,INK,heavy);c.restore();
-        c.save();c.rotate(10+sway);rect(c,-36,-54,68,96,14,0xfffbfdf3);center(c,"#1",-2,-10,25,INK,heavy);rect(c,-20,6,36,6,3,0x330c2019);rect(c,-20,18,24,6,3,0x220c2019);c.restore();
-        float bob=-Math.abs((float)Math.sin(t*2.2f))*10;c.save();c.translate(-46,48+bob);c.rotate((float)Math.sin(t*1.6f)*18);dice(c,-16,-16,32,INK,LIME,5);c.restore();
-        star(c,40,-64,7,INK);star(c,52,40,4,0xff0c2019);
+        c.save();c.rotate(-22+sway*.6f);rect(c,-34,-50,68,96,14,0x331e0b3d);rect(c,-36,-54,68,96,14,AQUA);c.restore();
+        c.save();c.rotate(-7+sway*.3f);rect(c,-36,-54,68,96,14,CORAL);center(c,"?",-2,4,24,INK,heavy);c.restore();
+        c.save();c.rotate(10+sway);rect(c,-36,-54,68,96,14,0xfffff6e8);center(c,"#1",-2,-10,25,INK,heavy);rect(c,-20,6,36,6,3,0x331e0b3d);rect(c,-20,18,24,6,3,0x221e0b3d);c.restore();
+        float bob=-Math.abs((float)Math.sin(t*2.2f))*10;c.save();c.translate(-46,48+bob);c.rotate((float)Math.sin(t*1.6f)*18);dice(c,-16,-16,32,INK,SUN,5);c.restore();
+        star(c,40,-64,7,INK);star(c,52,40,4,0xff1e0b3d);
         c.restore();if(!reduced())frameAnimating=true;
     }
     private void modeTile(Canvas c,float x,float y,float w,float h,int color,String symbol,String title,String subtitle,Runnable action){
         pressTransform(c,x,y,w,h);
         card(c,x,y,w,h,26);
         c.save();clipRound(c,x,y,w,h,26);glow(c,x+w-16,y+12,130,(color&0xffffff)|0x3a000000);c.restore();
-        float bob=(float)Math.sin(anim()*1.4f+(color==LIME?0:1.5f))*3;
+        float bob=(float)Math.sin(anim()*1.4f+(color==SUN?0:1.5f))*3;
         circle(c,x+46,y+60,30,0x50000000);circle(c,x+46,y+56+bob,30,darken(color,.55f));orb(c,x+46,y+52+bob,30,color);icon(c,symbol,x+32,y+38+bob,28,INK);
         text(c,title,x+18,y+122,21,TEXT,heavy);
         wrap(c,subtitle,x+18,y+146,w-36,12,17,MUTED,regular,3);
@@ -581,8 +595,8 @@ public final class TopperiaView extends ViewGroup {
     }
     private void lastResult(Canvas c,float x,float y,float w,float h){
         pressTransform(c,x,y,w,h);card(c,x,y,w,h,22);
-        circle(c,x+38,y+h/2,20,0x33f6b38a);icon(c,"trophy",x+27,y+h/2-11,22,ORANGE);
-        text(c,"RIVEDI L’ULTIMA PARTITA",x+70,y+30,9.5f,ORANGE,bold);fit(c,session.ranking.title,x+70,y+51,w-120,14,TEXT,bold);
+        circle(c,x+38,y+h/2,20,0x33ff6f91);icon(c,"trophy",x+27,y+h/2-11,22,CORAL);
+        text(c,"RIVEDI L’ULTIMA PARTITA",x+70,y+30,9.5f,CORAL,bold);fit(c,session.ranking.title,x+70,y+51,w-120,14,TEXT,bold);
         icon(c,"next",x+w-36,y+h/2-8,16,MUTED);
         c.restore();hit(x,y,w,h,"Rivedi l’ultima partita",()->show("results"));
     }
@@ -596,15 +610,15 @@ public final class TopperiaView extends ViewGroup {
         o=push(c,1);float y;
         if(picking){
             boolean duel=pendingMode==GameSession.Mode.DUEL;
-            text(c,duel?"SFIDA 1 CONTRO 1 · ALLA CIECA":"IN SOLITARIA",24,98,10.5f,duel?LILAC:LIME,bold);
+            text(c,duel?"SFIDA 1 CONTRO 1 · ALLA CIECA":"IN SOLITARIA",24,98,10.5f,duel?AQUA:SUN,bold);
             if(duel)fit(c,store.prefs.getString("player1","Giocatore 1")+" vs "+store.prefs.getString("player2","Giocatore 2"),22,138,356,30,TEXT,heavy);
             else text(c,"Cosa scopri oggi?",22,138,30,TEXT,heavy);
             y=164;
         }else{
             int played=playedCount();
-            text(c,"CATALOGO",24,98,10.5f,LIME,bold);text(c,"Classifiche",22,142,36,TEXT,heavy);
+            text(c,"CATALOGO",24,98,10.5f,SUN,bold);text(c,"Classifiche",22,142,36,TEXT,heavy);
             text(c,played+" di "+rankings.size()+" esplorate",24,168,12,MUTED,regular);
-            rect(c,24,180,352,6,3,CARD_HI);if(played>0)gradRect(c,24,180,352f*played/rankings.size(),6,3,LIME,TEAL);
+            rect(c,24,180,352,6,3,CARD_HI);if(played>0)gradRect(c,24,180,352f*played/rankings.size(),6,3,SUN,TANGERINE);
             y=204;
         }
         pop(c,o);
@@ -632,7 +646,7 @@ public final class TopperiaView extends ViewGroup {
         for(String category:categories){
             float w=measure(category,11,bold)+28;if(cx+w>377){cx=24;y+=40;}
             boolean selected=filter.equals(category);
-            float sink=3*pressAmount(cx,y,w,32);int chip=selected?LIME:CARD_HI;rect(c,cx,y+3,w,32,16,darken(chip,.5f));pill(c,category,cx,y+sink,w,32,chip,selected?INK:MUTED,11);if(selected)rect(c,cx+8,y+sink+2,w-16,10,5,0x40ffffff);
+            float sink=3*pressAmount(cx,y,w,32);int chip=selected?SUN:CARD_HI;rect(c,cx,y+3,w,32,16,darken(chip,.5f));pill(c,category,cx,y+sink,w,32,chip,selected?INK:MUTED,11);if(selected)rect(c,cx+8,y+sink+2,w-16,10,5,0x40ffffff);
             final String choice=category;
             hit(cx,y,w,32,"Categoria "+category,()->{if(!filter.equals(choice)){stopScroll();filter=choice;scroll=0;filterAt=now();accessibilityFocus=hovered=-1;invalidate();sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);}});
             cx+=w+7;
@@ -641,9 +655,9 @@ public final class TopperiaView extends ViewGroup {
     }
     private void surpriseStrip(Canvas c,float x,float y,float w,float h){
         pressTransform(c,x,y,w,h);
-        gradRect(c,x,y,w,h,22,LIME,TEAL);
-        text(c,"Sorprendimi",x+20,y+32,19,INK,heavy);fit(c,filter.equals("Tutte")?"Una Top 10 a caso. Il resto lo fai tu.":"Una sorpresa tra: "+filter+".",x+20,y+54,w-100,11.5f,0xcc0c2019,regular);
-        c.save();c.translate(x+w-42,y+h/2);c.rotate((float)Math.sin(anim()*1.4f)*9);dice(c,-20,-20,40,INK,LIME,5);c.restore();if(!reduced())frameAnimating=true;
+        gradRect(c,x,y,w,h,22,SUN,TANGERINE);
+        text(c,"Sorprendimi",x+20,y+32,19,INK,heavy);fit(c,filter.equals("Tutte")?"Una Top 10 a caso. Il resto lo fai tu.":"Una sorpresa tra: "+filter+".",x+20,y+54,w-100,11.5f,0xcc1e0b3d,regular);
+        c.save();c.translate(x+w-42,y+h/2);c.rotate((float)Math.sin(anim()*1.4f)*9);dice(c,-20,-20,40,INK,SUN,5);c.restore();if(!reduced())frameAnimating=true;
         c.restore();hit(x,y,w,h,"Classifica casuale: "+filter,()->randomRound(filter));
     }
     private void rankingCard(Canvas c,float x,float y,float w,float h,RankedList r,boolean picking){
@@ -652,7 +666,7 @@ public final class TopperiaView extends ViewGroup {
         card(c,x,y,w,h,22);
         c.save();clipRound(c,x,y,w,h,22);glow(c,x+36,y+36,96,(accent&0xffffff)|0x2a000000);c.restore();
         iconBadge(c,r.icon,x+14,y+14,46,accent);
-        if(store.option("played_"+r.id,false)){circle(c,x+w-24,y+28,11,LIME);icon(c,"check",x+w-31,y+21,14,INK);}
+        if(store.option("played_"+r.id,false)){circle(c,x+w-24,y+28,11,SUN);icon(c,"check",x+w-31,y+21,14,INK);}
         fit(c,r.category.toUpperCase(Locale.ITALIAN),x+16,y+84,w-32,8.5f,accent,bold);
         wrap(c,r.title,x+16,y+106,w-30,14,18.5f,TEXT,bold,3);
         text(c,r.referenceYear,x+16,y+h-16,10.5f,MUTED,bold);
@@ -665,28 +679,28 @@ public final class TopperiaView extends ViewGroup {
     private void profile(Canvas c){
         pageStart(c);
         float o=push(c,0);topBar(c);pop(c,o);
-        o=push(c,1);text(c,"IL TUO PERCORSO",24,98,10.5f,LIME,bold);text(c,"Ciao, mente curiosa.",22,138,30,TEXT,heavy);pop(c,o);
+        o=push(c,1);text(c,"IL TUO PERCORSO",24,98,10.5f,SUN,bold);text(c,"Ciao, mente curiosa.",22,138,30,TEXT,heavy);pop(c,o);
         int hitsTotal=store.number("hits"),level=1,need=10,reached=0;while(hitsTotal>=reached+need){reached+=need;level++;need+=5;}
         float y=158;
         o=push(c,2);
-        rect(c,24,y+6,352,164,28,0x55000000);gradRect(c,24,y,352,164,28,LILAC,PINK);
-        c.save();clipRound(c,24,y,352,164,28);circle(c,330,y+20,80,0x22ffffff);c.save();c.translate(310,y+92);c.scale(.82f,.82f);trophy(c,0,0,LIME);c.restore();c.restore();
-        pill(c,"LIVELLO "+level,44,y+20,92,26,0x260c2019,INK,10);
+        rect(c,24,y+6,352,164,28,0x55000000);gradRect(c,24,y,352,164,28,AQUA,ORCHID);
+        c.save();clipRound(c,24,y,352,164,28);circle(c,330,y+20,80,0x22ffffff);c.save();c.translate(310,y+92);c.scale(.82f,.82f);trophy(c,0,0,SUN);c.restore();c.restore();
+        pill(c,"LIVELLO "+level,44,y+20,92,26,0x261e0b3d,INK,10);
         text(c,LEVELS[Math.min(level-1,LEVELS.length-1)],44,y+80,30,INK,heavy);
-        text(c,hitsTotal+" scoperte in tutto",44,y+104,12.5f,0xcc0c2019,regular);
+        text(c,hitsTotal+" scoperte in tutto",44,y+104,12.5f,0xcc1e0b3d,regular);
         float progress=(hitsTotal-reached)/(float)need;
-        rect(c,44,y+122,220,8,4,0x260c2019);rect(c,44,y+122,Math.max(8,220*progress),8,4,INK);
-        text(c,"Ancora "+(reached+need-hitsTotal)+" per il livello "+(level+1),44,y+148,10.5f,0xcc0c2019,bold);
+        rect(c,44,y+122,220,8,4,0x261e0b3d);rect(c,44,y+122,Math.max(8,220*progress),8,4,INK);
+        text(c,"Ancora "+(reached+need-hitsTotal)+" per il livello "+(level+1),44,y+148,10.5f,0xcc1e0b3d,bold);
         read(24,y,352,164,"Livello "+level+", "+LEVELS[Math.min(level-1,LEVELS.length-1)]+". "+hitsTotal+" scoperte in tutto.");
         pop(c,o);y+=182;
         int tries=store.number("attempts");
         o=push(c,3);
-        stat(c,24,y,"trophy",LIME,store.number("best")+"/10","RECORD");stat(c,205,y,"flag",LILAC,""+store.number("rounds"),"PARTITE");
-        stat(c,24,y+104,"star",ORANGE,""+store.number("hits"),"SCOPERTE");stat(c,205,y+104,"target",TEAL,tries==0?"—":Math.round(store.number("hits")*100f/tries)+"%","PRECISIONE");
+        stat(c,24,y,"trophy",SUN,store.number("best")+"/10","RECORD");stat(c,205,y,"flag",AQUA,""+store.number("rounds"),"PARTITE");
+        stat(c,24,y+104,"star",CORAL,""+store.number("hits"),"SCOPERTE");stat(c,205,y+104,"target",TANGERINE,tries==0?"—":Math.round(store.number("hits")*100f/tries)+"%","PRECISIONE");
         pop(c,o);y+=214;
         int played=playedCount();
-        o=push(c,4);card(c,24,y,352,78,22);text(c,"Classifiche esplorate",44,y+32,14,TEXT,bold);textRight(c,played+" / "+rankings.size(),356,y+32,14,LIME,heavy);
-        rect(c,44,y+48,312,8,4,CARD_HI);if(played>0)gradRect(c,44,y+48,312f*played/rankings.size(),8,4,LIME,TEAL);pop(c,o);y+=104;
+        o=push(c,4);card(c,24,y,352,78,22);text(c,"Classifiche esplorate",44,y+32,14,TEXT,bold);textRight(c,played+" / "+rankings.size(),356,y+32,14,SUN,heavy);
+        rect(c,44,y+48,312,8,4,CARD_HI);if(played>0)gradRect(c,44,y+48,312f*played/rankings.size(),8,4,SUN,TANGERINE);pop(c,o);y+=104;
         o=push(c,5);text(c,"Traguardi",24,y,20,TEXT,heavy);pop(c,o);y+=16;
         String[][] goals={{"La prima vetta","Completa la tua prima partita","flag"},{"A metà del cielo","Trova almeno 5 risposte in un round","star"},{"Cima perfetta","Scopri una Top 10 completa","trophy"},{"Due menti, una sfida","Completa una partita 1 contro 1","duel"},{"Curioso seriale","Gioca 10 partite","spark"},{"Collezionista","Esplora 10 classifiche diverse","grid"}};
         boolean[] unlocked={store.number("rounds")>=1,store.number("best")>=5,store.number("best")==10,store.number("duels")>=1,store.number("rounds")>=10,played>=10};
@@ -700,7 +714,7 @@ public final class TopperiaView extends ViewGroup {
         card(c,24,y,352,64,20);
         circle(c,56,y+32,20,unlocked?color:CARD_HI);icon(c,symbol,46,y+22,20,unlocked?INK:DIM);
         text(c,title,88,y+28,14.5f,unlocked?TEXT:MUTED,bold);fit(c,detail,88,y+47,236,11,unlocked?MUTED:DIM,regular);
-        if(unlocked){circle(c,350,y+32,12,LIME);icon(c,"check",343,y+25,14,INK);}else icon(c,"lock",341,y+23,18,DIM);
+        if(unlocked){circle(c,350,y+32,12,SUN);icon(c,"check",343,y+25,14,INK);}else icon(c,"lock",341,y+23,18,DIM);
         read(24,y,352,64,title+". "+detail+(unlocked?". Sbloccato.":". Da sbloccare."));
     }
 
@@ -709,11 +723,11 @@ public final class TopperiaView extends ViewGroup {
         maxScroll=0;scroll=0;
         float o=push(c,0);roundButton(c,"back",46,36,"Indietro",this::goBack);center(c,"Sfida 1 contro 1",200,42,15,TEXT,bold);pop(c,o);
         o=push(c,1);
-        text(c,"NUOVA SFIDA · ALLA CIECA",24,98,10.5f,LILAC,bold);text(c,"Chi sfida chi?",22,138,32,TEXT,heavy);
+        text(c,"NUOVA SFIDA · ALLA CIECA",24,98,10.5f,AQUA,bold);text(c,"Chi sfida chi?",22,138,32,TEXT,heavy);
         if(duelRanking!=null)fit(c,"Classifica: "+duelRanking.title,24,164,352,12.5f,MUTED,regular);else text(c,"Stesso telefono, stessa classifica.",24,164,13,MUTED,regular);
         pop(c,o);
-        o=push(c,2);playerCard(c,178,1,nameOne,LIME);pop(c,o);
-        o=push(c,3);playerCard(c,310,2,nameTwo,LILAC);pop(c,o);
+        o=push(c,2);playerCard(c,178,1,nameOne,SUN);pop(c,o);
+        o=push(c,3);playerCard(c,310,2,nameTwo,AQUA);pop(c,o);
         o=push(c,4);c.save();c.translate(200,300);c.rotate(reduced()?0:(float)Math.sin(anim()*1.3f)*8);vsBadge(c,0,0,24);c.restore();pop(c,o);
         if(!keyboard){
             o=push(c,5);float y=444;card(c,24,y,352,138,24);
@@ -722,7 +736,7 @@ public final class TopperiaView extends ViewGroup {
             read(24,y,352,138,rows[0][1]+" "+rows[1][1]+" "+rows[2][1]);
             pop(c,o);
         }
-        if(H-82>440){o=push(c,6);button(c,duelRanking==null?"Scegli la classifica  →":"Inizia la sfida  →",24,H-82,352,58,LILAC,INK,this::duelContinue);pop(c,o);}
+        if(H-82>440){o=push(c,6);button(c,duelRanking==null?"Scegli la classifica  →":"Inizia la sfida  →",24,H-82,352,58,AQUA,INK,this::duelContinue);pop(c,o);}
     }
     private void playerCard(Canvas c,float y,int number,EditText field,int color){
         card(c,24,y,352,112,24);
@@ -732,7 +746,7 @@ public final class TopperiaView extends ViewGroup {
         rect(c,104,y+50,256,44,14,CARD_HI);ringRect(c,104,y+50,256,44,14,field.hasFocus()?color:LINE);
         if(field.getVisibility()!=VISIBLE)fit(c,name.isEmpty()?"Giocatore "+number:name,118,y+78,230,16,name.isEmpty()?DIM:TEXT,bold);
     }
-    private void vsBadge(Canvas c,float x,float y,float r){glow(c,x,y,r*2.4f,0x55f6b38a);p.setShader(new LinearGradient(x-r,y-r,x+r,y+r,a(ORANGE),a(PINK),Shader.TileMode.CLAMP));p.setColor(0xff000000);p.setStyle(Paint.Style.FILL);c.drawCircle(x,y,r,p);p.setShader(null);center(c,"VS",x,y+r*.36f,r*.8f,INK,heavy);}
+    private void vsBadge(Canvas c,float x,float y,float r){glow(c,x,y,r*2.4f,0x55ff6f91);p.setShader(new LinearGradient(x-r,y-r,x+r,y+r,a(CORAL),a(ORCHID),Shader.TileMode.CLAMP));p.setColor(0xff000000);p.setStyle(Paint.Style.FILL);c.drawCircle(x,y,r,p);p.setShader(null);center(c,"VS",x,y+r*.36f,r*.8f,INK,heavy);}
     private void avatar(Canvas c,float cx,float cy,float r,String name,int color){
         circle(c,cx,cy+r*.2f,r,0x50000000);circle(c,cx,cy+r*.1f,r,darken(color,.55f));orb(c,cx,cy,r,color);
         String initial=name.isEmpty()?"?":new String(Character.toChars(name.codePointAt(0))).toUpperCase(Locale.ITALIAN);
@@ -751,10 +765,10 @@ public final class TopperiaView extends ViewGroup {
         roundButton(c,"info",354,36,"Fonte della classifica",this::source);
         pop(c,o);
         o=push(c,1);float size=keyboard?20:25;float end=wrap(c,r.title,24,keyboard?90:104,352,size,size+4,TEXT,heavy,2);pop(c,o);
-        float statsY=end+(keyboard?24:32);int used=player.attemptsUsed();int color=blind?playerColor(session.activePlayerIndex()):LIME;
+        float statsY=end+(keyboard?24:32);int used=player.attemptsUsed();int color=blind?playerColor(session.activePlayerIndex()):SUN;
         o=push(c,2);
         if(blind){avatar(c,36,statsY+2,12,player.name,color);fit(c,"Turno di "+player.name,56,statsY+7,190,14,TEXT,bold);}
-        else{star(c,33,statsY+2,8,LIME);text(c,player.score()+" / 10 scoperte",48,statsY+7,14,TEXT,bold);}
+        else{star(c,33,statsY+2,8,SUN);text(c,player.score()+" / 10 scoperte",48,statsY+7,14,TEXT,bold);}
         for(int i=0;i<10;i++){float x=260+i*11.8f;float pulse=!reduced()&&i==used-1?1+(float)Math.sin(Math.PI*Motion.progress(now(),lastSubmissionAt,380))*.7f:1;c.save();c.scale(1,pulse,x+4,statsY+1);rect(c,x,statsY-2,8,7,3.5f,i<used?color:CARD_HI);c.restore();}
         if(!reduced()&&now()-lastSubmissionAt<1000)frameAnimating=true;
         textRight(c,(10-used)+(10-used==1?" tentativo":" tentativi"),376,statsY+20,10,MUTED,regular);
@@ -766,13 +780,13 @@ public final class TopperiaView extends ViewGroup {
         if(playing){
             float y=H-84,s=shake();
             c.save();c.translate(s,0);
-            rect(c,24,y-2,352,66,24,0xff0d1f19);rect(c,24,y+3,352,61,24,CARD_HI);rect(c,24,y+60,352,6,3,0x33000000);ringRect(c,24,y,352,64,24,input.hasFocus()?(color&0xffffff)|0x99000000:LINE);
+            rect(c,24,y-2,352,66,24,0xff120830);rect(c,24,y+3,352,61,24,CARD_HI);rect(c,24,y+60,352,6,3,0x33000000);ringRect(c,24,y,352,64,24,input.hasFocus()?(color&0xffffff)|0x99000000:LINE);
             c.restore();
             if(!keyboard)center(c,blind?"Nessun indizio: tutto si svela alla fine.":"Accenti e maiuscole non contano.",200,H-96,10,DIM,regular);
         }else if(blind){
             center(c,"Tutte le 20 risposte sono sigillate.",200,H-94,11.5f,MUTED,regular);
-            button(c,"Svela i risultati  →",24,H-80,352,58,LILAC,INK,()->show("reveal"));
-        }else button(c,"Guarda il risultato  →",24,H-80,352,58,LIME,INK,()->show("results"));
+            button(c,"Svela i risultati  →",24,H-80,352,58,AQUA,INK,()->show("reveal"));
+        }else button(c,"Guarda il risultato  →",24,H-80,352,58,SUN,INK,()->show("results"));
     }
     private void board(Canvas c,float top,float bottom,boolean blind){
         float available=bottom-top;boolean single=available/10f>=40;int rows=single?10:5;float gap=single?6:7;
@@ -794,14 +808,14 @@ public final class TopperiaView extends ViewGroup {
         c.save();flip3d(c,x+w/2,cy,turn,true);
         RankedList.Entry entry=r.entries.get(i);
         if(!front){
-            rect(c,x,y+3,w,h,radius,0xff0c1c17);rect(c,x,y,w,h,radius,CARD);ringRect(c,x,y,w,h,radius,LINE);
+            rect(c,x,y+3,w,h,radius,0xff120830);rect(c,x,y,w,h,radius,CARD);ringRect(c,x,y,w,h,radius,LINE);
             circle(c,x+22,cy,badge,CARD_HI);center(c,""+(i+1),x+22,cy+4,11,MUTED,bold);
             float shimmer=.5f+.5f*(float)Math.sin(anim()*2.2f-i*.5f);
             rect(c,x+46,cy-4,wide?150:80,8,4,(Math.round(18+22*shimmer)<<24)|0xffffff);if(wide)rect(c,x+w-70,cy-4,50,8,4,(Math.round(10+14*shimmer)<<24)|0xffffff);
         }else{
-            int nameColor=found?INK:MUTED,valueColor=found?0xaa0c2019:DIM;
-            if(found){rect(c,x,y+3.5f,w,h,radius,darken(TEAL,.5f));gradRect(c,x,y,w,h,radius,LIME,TEAL);rect(c,x+12,y+2,w-24,h*.32f,h*.16f,0x30ffffff);}else{rect(c,x,y+3,w,h,radius,darken(CARD_HI,.55f));rect(c,x,y,w,h,radius,CARD_HI);}
-            circle(c,x+22,cy,badge,found?INK:0x22ffffff);center(c,position(i),x+22,cy+4,11,found?LIME:MUTED,bold);
+            int nameColor=found?INK:MUTED,valueColor=found?0xaa1e0b3d:DIM;
+            if(found){rect(c,x,y+3.5f,w,h,radius,darken(TANGERINE,.5f));gradRect(c,x,y,w,h,radius,SUN,TANGERINE);rect(c,x+12,y+2,w-24,h*.32f,h*.16f,0x30ffffff);}else{rect(c,x,y+3,w,h,radius,darken(CARD_HI,.55f));rect(c,x,y,w,h,radius,CARD_HI);}
+            circle(c,x+22,cy,badge,found?INK:0x22ffffff);center(c,position(i),x+22,cy+4,11,found?SUN:MUTED,bold);
             if(wide){float vw=Math.min(130,measure(entry.value,10.5f,regular));fit(c,entry.value,x+w-14-vw,cy+4,vw,10.5f,valueColor,regular);fit(c,entry.name,x+46,cy+5,w-vw-74,14,nameColor,bold);}
             else if(h>44){fit(c,entry.name,x+42,cy-1,w-52,13,nameColor,bold);fit(c,entry.value,x+42,cy+15,w-52,9.5f,valueColor,regular);}
             else fit(c,entry.name,x+42,cy+5,w-52,12.5f,nameColor,bold);
@@ -810,7 +824,7 @@ public final class TopperiaView extends ViewGroup {
         if(!reduced()&&found&&i==lastHit&&reveals[i]>0){
             float burst=Motion.progress(now(),reveals[i],950);
             if(burst<1){frameAnimating=true;
-                if(burst>.45f)ringRect(c,x-3,y-3,w+6,h+6,radius+3,(Math.round(200*(1-burst))<<24)|(LIME&0xffffff));
+                if(burst>.45f)ringRect(c,x-3,y-3,w+6,h+6,radius+3,(Math.round(200*(1-burst))<<24)|(SUN&0xffffff));
                 for(int j=0;j<12;j++){double angle=j*Math.PI*2/12;float distance=16+Motion.ease(burst)*(wide?60:40);circle(c,x+w/2+(float)Math.cos(angle)*distance*(wide?2.2f:1.2f),cy+(float)Math.sin(angle)*distance*.7f,2.4f*(1-burst),ACCENTS[j%5]);}
             }
         }
@@ -842,21 +856,21 @@ public final class TopperiaView extends ViewGroup {
         roundButton(c,"back",46,36,"Metti in pausa la sfida",this::confirmExit);
         float cy=Math.max(176,H*.3f);
         float o=push(c,0);
-        glow(c,200,cy,170,0x40c4b2f7);
+        glow(c,200,cy,170,0x403ee6d0);
         float k=reduced()?.5f:(float)(1-Math.cos(anim()*1.7))/2;
-        avatar(c,104,cy,34,session.player(0).name,LIME);avatar(c,296,cy,34,session.player(1).name,LILAC);
+        avatar(c,104,cy,34,session.player(0).name,SUN);avatar(c,296,cy,34,session.player(1).name,AQUA);
         float px=136+128*k,py=cy-22-(float)Math.sin(k*Math.PI)*34;
         c.save();c.translate(px,py);c.rotate((k-.5f)*30);rect(c,-14,-22,28,44,7,TEXT);rect(c,-11,-18,22,32,4,INK);circle(c,0,18,1.6f,INK);c.restore();
         centerFit(c,session.player(0).name,104,cy+56,120,12,MUTED,bold);centerFit(c,session.player(1).name,296,cy+56,120,12,MUTED,bold);
         if(!reduced())frameAnimating=true;
         pop(c,o);
         o=push(c,1);
-        center(c,"Tocca a",200,cy+112,16,MUTED,regular);centerFit(c,session.player(1).name,200,cy+152,350,36,LILAC,heavy);
+        center(c,"Tocca a",200,cy+112,16,MUTED,regular);centerFit(c,session.player(1).name,200,cy+152,350,36,AQUA,heavy);
         centerFit(c,session.player(0).name+" ha sigillato le sue 10 risposte.",200,cy+188,350,13,MUTED,regular);
         center(c,"Passa il telefono senza sbirciare!",200,cy+210,13,MUTED,regular);
         pop(c,o);
         read(24,cy+80,352,140,"Tocca a "+session.player(1).name+". "+session.player(0).name+" ha sigillato le sue 10 risposte. Passa il telefono senza sbirciare.");
-        o=push(c,2);button(c,"Sono "+session.player(1).name+", si parte!",24,Math.min(H-88,cy+248),352,58,LILAC,INK,this::startSecondPlayer);pop(c,o);
+        o=push(c,2);button(c,"Sono "+session.player(1).name+", si parte!",24,Math.min(H-88,cy+248),352,58,AQUA,INK,this::startSecondPlayer);pop(c,o);
     }
 
     // ——— Reveal: both sealed boards open card by card ———
@@ -867,25 +881,26 @@ public final class TopperiaView extends ViewGroup {
         int opened=reduced()?20:(int)Math.max(0,Math.min(20,now()<start?0:(now()-start)/step+1));
         if(!capturing&&opened>revealCount){
             boolean hit=false;for(int j=revealCount;j<opened;j++){GameSession.Guess g=guessAt(j%2,j/2);if(g!=null&&g.status==GameSession.GuessStatus.HIT)hit=true;}
-            revealCount=opened;if(!reduced()){if(hit)feedback(true);else tone(ToneGenerator.TONE_PROP_BEEP,40);}
+            revealCount=opened;if(!reduced()){if(hit)feedback(true);else sfx(Sound.FLIP);}
         }
         boolean done=reduced()||now()>=doneAt;if(!done)frameAnimating=true;
+        if(done&&!winPlayed&&!capturing){winPlayed=true;sfx(Sound.WIN);}
         int[] scores=new int[2];for(int j=0;j<opened;j++){GameSession.Guess g=guessAt(j%2,j/2);if(g!=null&&g.status==GameSession.GuessStatus.HIT)scores[j%2]++;}
         int winner=done?session.winnerIndex():-1;
         if(done){
             float k=reduced()?1:Motion.ease(Motion.progress(now(),doneAt,500));
             String headline=winner<0?"Pareggio perfetto!":session.player(winner).name+" vince!";
-            c.save();float zoom=.7f+.3f*k;c.scale(zoom,zoom,200,38);float before=alphaMul;alphaMul*=k;centerFit(c,headline,200,46,350,26,winner<0?ORANGE:playerColor(winner),heavy);alphaMul=before;c.restore();
+            c.save();float zoom=.7f+.3f*k;c.scale(zoom,zoom,200,38);float before=alphaMul;alphaMul*=k;centerFit(c,headline,200,46,350,26,winner<0?CORAL:playerColor(winner),heavy);alphaMul=before;c.restore();
             confetti(c,0,H,36);
         }else{
-            center(c,"LA RESA DEI CONTI",200,40,11,LILAC,bold);
+            center(c,"LA RESA DEI CONTI",200,40,11,AQUA,bold);
             pill(c,"Salta",312,20,64,32,CARD_HI,TEXT,11);hit(306,14,76,44,"Salta l’animazione",()->revealAt=now()-100000);
         }
         for(int pl=0;pl<2;pl++){
             float x=pl==0?24:210;boolean lead=done&&winner==pl;
             card(c,x,64,166,112,24);if(lead){ringRect(c,x,64,166,112,24,playerColor(pl));c.save();clipRound(c,x,64,166,112,24);glow(c,x+83,90,110,(playerColor(pl)&0xffffff)|0x40000000);c.restore();}
             avatar(c,x+36,100,20,session.player(pl).name,playerColor(pl));
-            if(lead)icon(c,"crown",x+26,58,20,ORANGE);
+            if(lead)icon(c,"crown",x+26,58,20,CORAL);
             fit(c,session.player(pl).name,x+64,106,90,13,TEXT,bold);
             text(c,""+scores[pl],x+18,164,32,TEXT,heavy);text(c,"/ 10",x+20+measure(""+scores[pl],32,heavy)+4,163,13,MUTED,bold);
         }
@@ -899,7 +914,7 @@ public final class TopperiaView extends ViewGroup {
         }
         pageEnd(c,top+10*(rowH+6)+10);
         stickyBar(c);
-        if(done)button(c,"Classifica completa  →",24,H-80,352,58,LIME,INK,()->show("results"));
+        if(done)button(c,"Classifica completa  →",24,H-80,352,58,SUN,INK,()->show("results"));
         else center(c,"Le buste si aprono una alla volta…",200,H-46,12.5f,MUTED,regular);
     }
     private GameSession.Guess guessAt(int player,int index){List<GameSession.Guess> list=session.player(player).guesses();return index<list.size()?list.get(index):null;}
@@ -907,11 +922,11 @@ public final class TopperiaView extends ViewGroup {
         float t=reduced()?1:Motion.progress(now(),time,340);boolean open=reduced()||now()>=time+170;
         float radius=Math.min(16,h/2.6f),cy=y+h/2;
         c.save();flip3d(c,x+w/2,cy,t,true);
-        if(guess!=null)rect(c,x,y+3.5f,w,h,radius,open&&guess.status==GameSession.GuessStatus.HIT?darken(TEAL,.5f):0xff0c1c17);
+        if(guess!=null)rect(c,x,y+3.5f,w,h,radius,open&&guess.status==GameSession.GuessStatus.HIT?darken(TANGERINE,.5f):0xff120830);
         if(guess==null){rect(c,x,y,w,h,radius,CARD);}
         else if(!open){rect(c,x,y,w,h,radius,CARD_HI);circle(c,x+20,cy,12,(playerColor(player)&0xffffff)|0x55000000);icon(c,"lock",x+13,cy-7,14,playerColor(player));center(c,"?",x+w/2+12,cy+5,14,DIM,heavy);}
-        else if(guess.status==GameSession.GuessStatus.HIT){gradRect(c,x,y,w,h,radius,LIME,TEAL);rect(c,x+10,y+2,w-20,h*.3f,h*.15f,0x30ffffff);circle(c,x+20,cy,12,INK);center(c,position(guess.entryIndex),x+20,cy+4,10,LIME,bold);fit(c,session.ranking.entries.get(guess.entryIndex).name,x+38,cy+5,w-46,12.5f,INK,bold);}
-        else{rect(c,x,y,w,h,radius,0xff33242a);circle(c,x+20,cy,12,0x33ff8b84);icon(c,"close",x+14,cy-6,12,RED);fit(c,guess.input,x+38,guess.entryIndex>=0&&h>44?cy:cy+5,w-46,12,MUTED,bold);if(guess.entryIndex>=0&&h>44)text(c,"già trovata",x+38,cy+14,9,DIM,regular);}
+        else if(guess.status==GameSession.GuessStatus.HIT){gradRect(c,x,y,w,h,radius,SUN,TANGERINE);rect(c,x+10,y+2,w-20,h*.3f,h*.15f,0x30ffffff);circle(c,x+20,cy,12,INK);center(c,position(guess.entryIndex),x+20,cy+4,10,SUN,bold);fit(c,session.ranking.entries.get(guess.entryIndex).name,x+38,cy+5,w-46,12.5f,INK,bold);}
+        else{rect(c,x,y,w,h,radius,0xff42173f);circle(c,x+20,cy,12,0x33ff5a5f);icon(c,"close",x+14,cy-6,12,RED);fit(c,guess.input,x+38,guess.entryIndex>=0&&h>44?cy:cy+5,w-46,12,MUTED,bold);if(guess.entryIndex>=0&&h>44)text(c,"già trovata",x+38,cy+14,9,DIM,regular);}
         c.restore();
         if(guess!=null)read(x,y,w,h,session.player(player).name+", risposta: "+(open?guess.input+(guess.status==GameSession.GuessStatus.HIT?", posizione "+position(guess.entryIndex):", non in classifica"):"ancora sigillata"));
     }
@@ -935,13 +950,13 @@ public final class TopperiaView extends ViewGroup {
         o=push(c,1);
         float k=reduced()?1:Motion.ease(Motion.progress(now(),pageAt+200,1200));if(k<1)frameAnimating=true;
         if(!duel){
-            glow(c,200,152,120,0x44dcf58d);
-            ring(c,200,152,62,13,0,LIME,CARD_HI);
-            p.setShader(new SweepGradient(200,152,new int[]{a(TEAL),a(LIME),a(TEAL)},null));ring(c,200,152,62,13,score/10f*k,LIME,0);p.setShader(null);
+            glow(c,200,152,120,0x44ffd23f);
+            ring(c,200,152,62,13,0,SUN,CARD_HI);
+            p.setShader(new SweepGradient(200,152,new int[]{a(TANGERINE),a(SUN),a(TANGERINE)},null));ring(c,200,152,62,13,score/10f*k,SUN,0);p.setShader(null);
             center(c,""+Math.round(score*k),200,168,46,TEXT,heavy);center(c,"SU 10",200,190,9.5f,MUTED,bold);
         }else{
             int winner=session.winnerIndex();
-            for(int pl=0;pl<2;pl++){float cx=pl==0?118:282;if(winner==pl){glow(c,cx,140,80,(playerColor(pl)&0xffffff)|0x55000000);icon(c,"crown",cx-14,74,28,ORANGE);}avatar(c,cx,140,34,session.player(pl).name,playerColor(pl));center(c,""+Math.round(session.player(pl).score()*k),cx,214,30,TEXT,heavy);centerFit(c,session.player(pl).name,cx,236,140,12,MUTED,bold);}
+            for(int pl=0;pl<2;pl++){float cx=pl==0?118:282;if(winner==pl){glow(c,cx,140,80,(playerColor(pl)&0xffffff)|0x55000000);icon(c,"crown",cx-14,74,28,CORAL);}avatar(c,cx,140,34,session.player(pl).name,playerColor(pl));center(c,""+Math.round(session.player(pl).score()*k),cx,214,30,TEXT,heavy);centerFit(c,session.player(pl).name,cx,236,140,12,MUTED,bold);}
             vsBadge(c,200,150,18);
         }
         pop(c,o);
@@ -958,24 +973,24 @@ public final class TopperiaView extends ViewGroup {
         for(int i=0;i<10;i++){
             o=push(c,4+Math.min(i,7));
             RankedList.Entry entry=session.ranking.entries.get(i);boolean one=session.player(0).isRevealed(i),two=duel&&session.player(1).isRevealed(i);boolean found=one||two;
-            card(c,24,y,352,58,18);if(found){c.save();clipRound(c,24,y,352,58,18);glow(c,24,y+29,120,0x33dcf58d);c.restore();}
+            card(c,24,y,352,58,18);if(found){c.save();clipRound(c,24,y,352,58,18);glow(c,24,y+29,120,0x33ffd23f);c.restore();}
             circle(c,50,y+29,15,i<3?medals[i]:CARD_HI);center(c,position(i),50,y+33,11.5f,i<3?INK:MUTED,bold);
             fit(c,entry.name,76,y+26,duel?224:250,14,found?TEXT:MUTED,bold);fit(c,entry.value,76,y+44,250,10.5f,DIM,regular);
-            if(duel){if(one)avatar(c,two?324:350,y+29,10,session.player(0).name,LIME);if(two)avatar(c,350,y+29,10,session.player(1).name,LILAC);}
-            else if(found){circle(c,350,y+29,12,LIME);icon(c,"check",343,y+22,14,INK);}
+            if(duel){if(one)avatar(c,two?324:350,y+29,10,session.player(0).name,SUN);if(two)avatar(c,350,y+29,10,session.player(1).name,AQUA);}
+            else if(found){circle(c,350,y+29,12,SUN);icon(c,"check",343,y+22,14,INK);}
             read(24,y,352,58,"Posizione "+position(i)+". "+entry.name+". "+entry.value+(duel?(one?". Trovata da "+session.player(0).name:"")+(two?". Trovata da "+session.player(1).name:""):found?". Trovata.":""));
             pop(c,o);y+=66;
         }
         y+=8;
         o=push(c,12);
-        pressTransform(c,24,y,352,70);card(c,24,y,352,70,20);circle(c,52,y+35,16,CARD_HI);icon(c,"info",43,y+26,18,TEAL);
+        pressTransform(c,24,y,352,70);card(c,24,y,352,70,20);circle(c,52,y+35,16,CARD_HI);icon(c,"info",43,y+26,18,TANGERINE);
         fit(c,session.ranking.sourceName,80,y+31,250,12.5f,TEXT,bold);text(c,"Fonte · "+session.ranking.referenceYear+" · apri il metodo",80,y+50,10.5f,MUTED,regular);icon(c,"next",344,y+27,16,MUTED);c.restore();
         hit(24,y,352,70,"Consulta la fonte dei dati",this::source);
         pop(c,o);y+=86;
         o=push(c,13);button(c,"Torna alla home",24,y,352,50,CARD_HI,TEXT,()->show("home"));pop(c,o);
         pageEnd(c,y+70);
         stickyBar(c);
-        button(c,duel?"Nuova sfida  →":"Un’altra Top 10  →",24,H-80,352,58,LIME,INK,this::playAgain);
+        button(c,duel?"Nuova sfida  →":"Un’altra Top 10  →",24,H-80,352,58,SUN,INK,this::playAgain);
     }
 
     // ——— Dock ———
@@ -986,9 +1001,9 @@ public final class TopperiaView extends ViewGroup {
         c.save();c.translate(0,(1-d)*130);
         p.setShader(dockFade);p.setColor(a(0xff000000));p.setStyle(Paint.Style.FILL);c.drawRect(0,H-170,400,H,p);p.setShader(null);
         float y=H-90;
-        rect(c,24,y+8,352,70,35,0x66000000);rect(c,24,y,352,70,35,0xf2132a22);ringRect(c,24,y,352,70,35,LINE);
+        rect(c,24,y+8,352,70,35,0x66000000);rect(c,24,y,352,70,35,0xf2241650);ringRect(c,24,y,352,70,35,LINE);
         float slot=112,position=navPosition();
-        rect(c,32+slot*position,y+11,slot,54,27,darken(TEAL,.5f));gradRect(c,32+slot*position,y+8,slot,54,27,LIME,TEAL);rect(c,44+slot*position,y+10,slot-24,18,9,0x33ffffff);
+        rect(c,32+slot*position,y+11,slot,54,27,darken(TANGERINE,.5f));gradRect(c,32+slot*position,y+8,slot,54,27,SUN,TANGERINE);rect(c,44+slot*position,y+10,slot-24,18,9,0x33ffffff);
         String[] labels={"Gioca","Classifiche","Profilo"},pages={"home","library","profile"},symbols={"home","grid","user"};
         for(int i=0;i<3;i++){
             float x=32+slot*i+slot/2,lit=Math.max(0,1-Math.abs(position-i));int color=blend(MUTED,INK,lit);
@@ -1004,7 +1019,7 @@ public final class TopperiaView extends ViewGroup {
         float age=now()-noticeAt,t=reduced()?1:Math.min(Motion.ease(age/220f),Motion.ease((2600-age)/240f));
         float w=Math.min(352,measure(notice,12.5f,bold)+48);
         c.save();c.translate(0,(1-t)*14);float before=alphaMul;alphaMul=t;
-        rect(c,200-w/2,y+4,w,42,21,0x55000000);rect(c,200-w/2,y,w,42,21,0xfa24443a);ringRect(c,200-w/2,y,w,42,21,LINE);
+        rect(c,200-w/2,y+4,w,42,21,0x55000000);rect(c,200-w/2,y,w,42,21,0xfa3a2878);ringRect(c,200-w/2,y,w,42,21,LINE);
         centerFit(c,notice,200,y+26,w-28,12.5f,TEXT,bold);
         alphaMul=before;c.restore();
         if(reduced())postInvalidateDelayed((long)(2600-age)+1);else frameAnimating=true;
@@ -1013,40 +1028,41 @@ public final class TopperiaView extends ViewGroup {
     // ——— Sheets ———
     private void modal(Canvas c){
         float progress=sheetProgress();if(!reduced()&&Motion.progress(now(),sheetAt,sheetClosing?240:380)<1)frameAnimating=true;
-        c.drawColor((Math.round(170*progress*(1-Math.min(.7f,sheetDrag/sheetHeight())))<<24)|0x020806);
+        c.drawColor((Math.round(170*progress*(1-Math.min(.7f,sheetDrag/sheetHeight())))<<24)|0x0a0420);
         if(!capturing)hits.clear();pageShift=0;float y=sheetTop();
         rect(c,0,y,400,H-y+40,32,SHEET);ringRect(c,0,y,400,H-y+40,32,LINE);rect(c,176,y+10,48,5,2.5f,0x40ffffff);
         circle(c,352,y+42,19,CARD_HI);icon(c,"close",344,y+34,16,TEXT);hit(326,y+16,52,52,"Chiudi",this::closeSheet);
         if(modal.equals("settings")){
             text(c,"Impostazioni",24,y+68,27,TEXT,heavy);text(c,"Piccoli dettagli, una bella partita.",24,y+94,13,MUTED,regular);
-            card(c,24,y+114,352,198,22);
-            setting(c,y+114,"Suoni","Una nota per ogni scoperta","sound",true);line(c,44,y+180,356,y+180,LINE,1);
-            setting(c,y+180,"Vibrazione","Senti quando ci hai preso","haptic",true);line(c,44,y+246,356,y+246,LINE,1);
-            setting(c,y+246,"Animazioni ridotte","Un’esperienza più tranquilla","reduced",false);
-            updateCard(c,y+326);
-            pressTransform(c,24,y+444,352,56);card(c,24,y+444,352,56,18);icon(c,"play",42,y+462,20,LIME);text(c,"Riguarda l’introduzione",74,y+477,13.5f,TEXT,bold);icon(c,"next",344,y+464,16,MUTED);c.restore();
-            hit(24,y+444,352,56,"Riguarda introduzione animata",this::openOnboarding);
-            center(c,"TOPPERIA "+updater.currentVersionName()+" · FATTO PER MENTI CURIOSE",200,y+540,8.5f,DIM,bold);
+            card(c,24,y+114,352,264,22);
+            setting(c,y+114,"Musica","Una colonna sonora da luna park","music",true);line(c,44,y+180,356,y+180,LINE,1);
+            setting(c,y+180,"Suoni","Una nota per ogni scoperta","sound",true);line(c,44,y+246,356,y+246,LINE,1);
+            setting(c,y+246,"Vibrazione","Senti quando ci hai preso","haptic",true);line(c,44,y+312,356,y+312,LINE,1);
+            setting(c,y+312,"Animazioni ridotte","Un’esperienza più tranquilla","reduced",false);
+            updateCard(c,y+392);
+            pressTransform(c,24,y+510,352,56);card(c,24,y+510,352,56,18);icon(c,"play",42,y+528,20,SUN);text(c,"Riguarda l’introduzione",74,y+543,13.5f,TEXT,bold);icon(c,"next",344,y+530,16,MUTED);c.restore();
+            hit(24,y+510,352,56,"Riguarda introduzione animata",this::openOnboarding);
+            center(c,"TOPPERIA "+updater.currentVersionName()+" · FATTO PER MENTI CURIOSE",200,y+606,8.5f,DIM,bold);
         }else if(modal.equals("rules")){
             text(c,"Come si gioca",24,y+68,27,TEXT,heavy);text(c,"Dieci posti. Dieci tentativi. Tanta curiosità.",24,y+94,13,MUTED,regular);
-            rule(c,y+120,1,LIME,"Pensa alla Top 10","Scrivi un elemento che secondo te è in classifica: la posizione non serve.");
-            rule(c,y+196,2,TEAL,"Scopri il suo posto","Se c’è, la casella si gira e mostra posizione e dato.");
-            rule(c,y+272,3,ORANGE,"Dieci tentativi","Ogni risposta nuova ne usa uno. Ripetizioni e risposte vuote sono gratis.");
-            rule(c,y+348,4,LILAC,"In due, alla cieca","Nella sfida nessuno vede i propri risultati fino alla resa dei conti finale.");
-            button(c,"Ci sono, giochiamo!",24,y+446,352,56,LIME,INK,this::closeSheet);
+            rule(c,y+120,1,SUN,"Pensa alla Top 10","Scrivi un elemento che secondo te è in classifica: la posizione non serve.");
+            rule(c,y+196,2,TANGERINE,"Scopri il suo posto","Se c’è, la casella si gira e mostra posizione e dato.");
+            rule(c,y+272,3,CORAL,"Dieci tentativi","Ogni risposta nuova ne usa uno. Ripetizioni e risposte vuote sono gratis.");
+            rule(c,y+348,4,AQUA,"In due, alla cieca","Nella sfida nessuno vede i propri risultati fino alla resa dei conti finale.");
+            button(c,"Ci sono, giochiamo!",24,y+446,352,56,SUN,INK,this::closeSheet);
         }else if(modal.equals("detail")&&detailRanking!=null){
             RankedList r=detailRanking;int accent=accent(r.category);
             glow(c,60,y+70,110,(accent&0xffffff)|0x40000000);
             iconBadge(c,r.icon,24,y+36,62,accent);
             text(c,r.category.toUpperCase(Locale.ITALIAN)+"  ·  "+r.referenceYear,102,y+62,10,accent,bold);
-            if(store.option("played_"+r.id,false))text(c,"✓ GIÀ GIOCATA",102,y+82,9.5f,LIME,bold);
+            if(store.option("played_"+r.id,false))text(c,"✓ GIÀ GIOCATA",102,y+82,9.5f,SUN,bold);
             float end=wrap(c,r.title,24,y+138,352,24,29,TEXT,heavy,3);
             end=wrap(c,r.subtitle,24,end+28,352,13.5f,19,MUTED,regular,2);
             icon(c,"info",24,end+14,15,DIM);fit(c,"Fonte: "+r.sourceName,46,end+26,326,11,DIM,regular);hit(24,end+6,352,30,"Fonte della classifica",this::source);
             read(24,y+30,352,end-y-20,r.title+". "+r.subtitle+". "+r.category+", "+r.referenceYear+".");
             float by=y+sheetHeight()-148;
-            button(c,"Gioca da solo",24,by,352,56,LIME,INK,()->playDetail(GameSession.Mode.SOLO));
-            button(c,"Sfida 1 contro 1",24,by+66,352,56,LILAC,INK,()->playDetail(GameSession.Mode.DUEL));
+            button(c,"Gioca da solo",24,by,352,56,SUN,INK,()->playDetail(GameSession.Mode.SOLO));
+            button(c,"Sfida 1 contro 1",24,by+66,352,56,AQUA,INK,()->playDetail(GameSession.Mode.DUEL));
         }
     }
     private void rule(Canvas c,float y,int n,int color,String title,String body){circle(c,44,y+20,19,color);center(c,""+n,44,y+26,16,INK,heavy);text(c,title,78,y+17,16,TEXT,bold);wrap(c,body,78,y+39,296,12.5f,17,MUTED,regular,2);}
@@ -1054,16 +1070,16 @@ public final class TopperiaView extends ViewGroup {
     private void setting(Canvas c,float y,String title,String desc,String key,boolean fallback){
         text(c,title,44,y+29,15,TEXT,bold);text(c,desc,44,y+49,11,MUTED,regular);boolean on=store.option(key,fallback);float t=switchPosition(key,fallback);
         if(!reduced()&&toggleKey.equals(key)&&now()-toggleAt<240)frameAnimating=true;
-        rect(c,302,y+18,54,30,15,blend(0xff2e4a41,LIME,t));circle(c,317+24*t,y+35,11,0x55000000);orb(c,317+24*t,y+33,11,blend(MUTED,WHITE,t));
-        hit(24,y,352,66,title+(on?", attivo":", disattivo"),()->{toggleFrom=switchPosition(key,fallback);toggleKey=key;toggleAt=now();store.toggle(key,fallback);readMotionPreference();invalidate();});
+        rect(c,302,y+18,54,30,15,blend(0xff4a3a80,SUN,t));circle(c,317+24*t,y+35,11,0x55000000);orb(c,317+24*t,y+33,11,blend(MUTED,WHITE,t));
+        hit(24,y,352,66,title+(on?", attivo":", disattivo"),()->{toggleFrom=switchPosition(key,fallback);toggleKey=key;toggleAt=now();store.toggle(key,fallback);if(key.equals("music"))sound.music(store.option("music",true));readMotionPreference();invalidate();});
     }
     private void updateCard(Canvas c,float y){
         card(c,24,y,352,104,22);text(c,"AGGIORNAMENTI",44,y+26,9,MUTED,bold);
         String label=updater.isBusy()?"Attendi…":updateReady?"Installa":availableUpdate!=null?"Scarica":"Verifica";
-        pill(c,label,262,y+14,96,34,updater.isBusy()?CARD_HI:LIME,updater.isBusy()?MUTED:INK,11);hit(256,y+8,108,46,label+" aggiornamenti",this::updateAction);
+        pill(c,label,262,y+14,96,34,updater.isBusy()?CARD_HI:SUN,updater.isBusy()?MUTED:INK,11);hit(256,y+8,108,46,label+" aggiornamenti",this::updateAction);
         fit(c,availableUpdate==null?"Topperia "+updater.currentVersionName():"Disponibile "+availableUpdate.versionName,44,y+50,210,16,TEXT,bold);
         fit(c,updateStatus,44,y+72,312,11,MUTED,regular);
-        if(downloadProgress>=0){rect(c,44,y+86,312,5,2.5f,CARD_HI);rect(c,44,y+86,312*Math.max(0,Math.min(1,downloadProgress/100f)),5,2.5f,LIME);}else text(c,"Distribuita dalla repository ufficiale su GitHub",44,y+92,9,DIM,regular);
+        if(downloadProgress>=0){rect(c,44,y+86,312,5,2.5f,CARD_HI);rect(c,44,y+86,312*Math.max(0,Math.min(1,downloadProgress/100f)),5,2.5f,SUN);}else text(c,"Distribuita dalla repository ufficiale su GitHub",44,y+92,9,DIM,regular);
         read(30,y,224,102,"Aggiornamenti. Versione installata "+updater.currentVersionName()+". "+updateStatus);
     }
 
@@ -1094,7 +1110,7 @@ public final class TopperiaView extends ViewGroup {
         hit(x,y,w,h+depth,title,action);
     }
     private void gradVertical(Canvas c,float x,float y,float w,float h,float r,int top,int bottom){p.setShader(new LinearGradient(x,y,x,y+h,a(top),a(bottom),Shader.TileMode.CLAMP));p.setColor(0xff000000);p.setStyle(Paint.Style.FILL);c.drawRoundRect(x,y,x+w,y+h,r,r,p);p.setShader(null);}
-    private void card(Canvas c,float x,float y,float w,float h,float r){rect(c,x+2,y+9,w-4,h,r,0x40000000);rect(c,x,y+4,w,h,r,0xff0c1c17);gradVertical(c,x,y,w,h,r,lighten(CARD,.04f),CARD);ringRect(c,x,y,w,h,r,LINE);line(c,x+r,y+1,x+w-r,y+1,0x22ffffff,1);}
+    private void card(Canvas c,float x,float y,float w,float h,float r){rect(c,x+2,y+9,w-4,h,r,0x40000000);rect(c,x,y+4,w,h,r,0xff120830);gradVertical(c,x,y,w,h,r,lighten(CARD,.04f),CARD);ringRect(c,x,y,w,h,r,LINE);line(c,x+r,y+1,x+w-r,y+1,0x22ffffff,1);}
     private void clipRound(Canvas c,float x,float y,float w,float h,float r){clipPath.rewind();clipPath.addRoundRect(x,y,x+w,y+h,r,r,Path.Direction.CW);c.clipPath(clipPath);}
     private void gradRect(Canvas c,float x,float y,float w,float h,float r,int from,int to){p.setShader(new LinearGradient(x,y,x+w,y+h,a(from),a(to),Shader.TileMode.CLAMP));p.setColor(0xff000000);p.setStyle(Paint.Style.FILL);c.drawRoundRect(x,y,x+w,y+h,r,r,p);p.setShader(null);}
     private void glow(Canvas c,float x,float y,float r,int color){if(c.quickReject(x-r,y-r,x+r,y+r,Canvas.EdgeType.AA))return;int start=a(color);p.setShader(new RadialGradient(x,y,r,start,start&0xffffff,Shader.TileMode.CLAMP));p.setColor(0xff000000);p.setStyle(Paint.Style.FILL);c.drawCircle(x,y,r,p);p.setShader(null);}
@@ -1105,7 +1121,7 @@ public final class TopperiaView extends ViewGroup {
         p.setStyle(Paint.Style.FILL);
     }
     private void logoMark(Canvas c,float x,float y,float size){if(logo!=null){logoPaint.setAlpha(Math.round(255*Math.max(0,Math.min(1,alphaMul))));c.drawBitmap(logo,null,new RectF(x,y,x+size,y+size),logoPaint);}}
-    private void brand(Canvas c,float x,float y,float size){c.save();c.translate(x,y);c.scale(size,size);glow(c,17,-13,34,0x30dcf58d);logoMark(c,-7,-38,49);text(c,"topperia",43,-1,25,TEXT,heavy);c.restore();}
+    private void brand(Canvas c,float x,float y,float size){c.save();c.translate(x,y);c.scale(size,size);glow(c,17,-13,34,0x30ffd23f);logoMark(c,-7,-38,49);text(c,"topperia",43,-1,25,TEXT,heavy);c.restore();}
     private void trophy(Canvas c,float x,float y,int color){if(c.quickReject(x-65,y-80,x+65,y+45,Canvas.EdgeType.AA))return;if(!reduced())frameAnimating=true;c.save();c.translate(x,y);float b=(float)Math.sin(anim()*1.8)*2;c.translate(0,b);stroke(c,-37,-24,74,34,16,color,5);p.setColor(a(color));Path cup=cupPath;cup.rewind();cup.moveTo(-28,-34);cup.lineTo(28,-34);cup.lineTo(22,0);cup.quadTo(0,26,-22,0);cup.close();c.drawPath(cup,p);rect(c,-4,10,8,18,3,color);rect(c,-19,26,38,8,4,color);circle(c,-8,-13,2.5f,INK);circle(c,8,-13,2.5f,INK);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2.4f);p.setColor(a(INK));c.drawArc(-7,-12,7,1,15,150,false,p);p.setStyle(Paint.Style.FILL);star(c,43,-41,7,WHITE);c.restore();}
     private void iconBadge(Canvas c,String name,float x,float y,float s,int bg){float r=s*.32f;rect(c,x,y+s*.09f,s,s,r,darken(bg,.55f));gradVertical(c,x,y,s,s,r,lighten(bg,.25f),bg);rect(c,x+s*.14f,y+s*.05f,s*.72f,s*.3f,s*.15f,0x33ffffff);icon(c,name,x+s*.24f,y+s*.24f,s*.52f,INK);}
     private void icon(Canvas c,String name,float x,float y,float size,int color){c.save();c.translate(x,y);c.scale(size/24,size/24);p.setShader(null);p.setColor(a(color));p.setStrokeWidth(1.9f);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);p.setStyle(Paint.Style.STROKE);Path a=iconPath;a.rewind();
@@ -1217,7 +1233,7 @@ public final class TopperiaView extends ViewGroup {
     }
     // Touches that reach the canvas missed every text field: release the keyboard on the setup page.
     private void hideKeyboardIfOutside(MotionEvent event){if(screen.equals("duel")&&(nameOne.hasFocus()||nameTwo.hasFocus()))hideKeyboard();}
-    @Override public boolean performClick(){super.performClick();if(tappedAction!=null){Runnable action=tappedAction;tappedAction=null;action.run();invalidate();return true;}return false;}
+    @Override public boolean performClick(){super.performClick();if(tappedAction!=null){Runnable action=tappedAction;tappedAction=null;sfx(Sound.TAP);action.run();invalidate();return true;}return false;}
 
     private void accessEvent(int id,int type){AccessibilityEvent event=AccessibilityEvent.obtain(type);event.setSource(this,id);event.setPackageName(activity.getPackageName());if(id>0&&id<=hits.size())event.setContentDescription(hits.get(id-1).label);if(getParent()!=null)getParent().requestSendAccessibilityEvent(this,event);}
     @Override public boolean dispatchHoverEvent(MotionEvent event){android.view.accessibility.AccessibilityManager manager=(android.view.accessibility.AccessibilityManager)activity.getSystemService(Context.ACCESSIBILITY_SERVICE);if(manager.isEnabled()&&manager.isTouchExplorationEnabled()){int target=-1;if(event.getAction()!=MotionEvent.ACTION_HOVER_EXIT){float x=event.getX()/scale,y=event.getY()/scale;for(int i=hits.size()-1;i>=0;i--)if(hits.get(i).bounds.contains(x,y)){target=i+1;break;}}if(target!=hovered){if(hovered>0)accessEvent(hovered,AccessibilityEvent.TYPE_VIEW_HOVER_EXIT);hovered=target;if(target>0)accessEvent(target,AccessibilityEvent.TYPE_VIEW_HOVER_ENTER);}return target>0||super.dispatchHoverEvent(event);}return super.dispatchHoverEvent(event);}
