@@ -152,6 +152,7 @@ public final class Rankings {
         ));
         catalog.addAll(NatureRankings.all());
         catalog.addAll(WorldRankings.all());
+        catalog.addAll(HistoryRankings.all());
         return Collections.unmodifiableList(catalog);
     }
 

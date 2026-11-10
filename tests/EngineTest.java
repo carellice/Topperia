@@ -174,7 +174,7 @@ public final class EngineTest {
     }
 
     private static void shippedRankingsIntegration() {
-        check(Rankings.all().size() == 30, "all thirty editorial rankings ship");
+        check(Rankings.all().size() == 36, "all thirty-six editorial rankings ship");
         Set<String> ids = new HashSet<>();
         for (RankedList ranking : Rankings.all()) {
             check(ids.add(ranking.id), "each ranking has a unique persistence id");
