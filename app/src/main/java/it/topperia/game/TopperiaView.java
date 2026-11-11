@@ -54,7 +54,8 @@ public final class TopperiaView extends ViewGroup {
     private final List<RankedList> rankings;
     private final ArrayList<Hit> hits=new ArrayList<>();
     private final EditText input,nameOne,nameTwo;
-    private final Button submit;
+    private final Button submit,mic;
+    public static final int SPEECH_REQUEST=41;
     private final Sound sound=new Sound();
     private boolean winPlayed=false;
     private final GitHubUpdater updater;
@@ -124,6 +125,11 @@ public final class TopperiaView extends ViewGroup {
         submit.setBackground(pushable(SUN,(int)dp(4)));
         submit.setStateListAnimator(null);
         submit.setContentDescription("Conferma risposta"); submit.setOnClickListener(v->guess()); addView(submit);
+        mic=new Button(context){@Override protected void drawableStateChanged(){super.drawableStateChanged();invalidate();}
+            @Override protected void onDraw(Canvas c){super.onDraw(c);float s=getWidth()/52f;c.save();c.scale(s,s);icon(c,"mic",15,isPressed()?16:12,22,TEXT);c.restore();}};
+        mic.setText(""); mic.setPadding(0,0,0,0); mic.setMinWidth(0); mic.setMinimumWidth(0); mic.setMinHeight(0); mic.setMinimumHeight(0);
+        mic.setBackground(pushable(CARD_HI,(int)dp(4))); mic.setStateListAnimator(null);
+        mic.setContentDescription("Rispondi a voce"); mic.setOnClickListener(v->listen()); addView(mic);
         nameOne=field(context,"Giocatore 1","Nome del primo giocatore",16,EditorInfo.IME_ACTION_NEXT);
         nameTwo=field(context,"Giocatore 2","Nome del secondo giocatore",16,EditorInfo.IME_ACTION_DONE);
         nameTwo.setOnEditorActionListener((v,action,event)->{if(action==EditorInfo.IME_ACTION_DONE){hideKeyboard();invalidate();return true;}return false;});
@@ -233,7 +239,7 @@ public final class TopperiaView extends ViewGroup {
     private float dockProgress(){return reduced()?dockTarget:Motion.lerp(dockFrom,dockTarget,Motion.ease(Motion.progress(now(),dockAt,380)));}
     private void updateInput(){
         boolean typing=screen.equals("game")&&session!=null&&session.phase()==GameSession.Phase.PLAYING&&modal.isEmpty();
-        input.setVisibility(typing?VISIBLE:GONE);submit.setVisibility(typing?VISIBLE:GONE);
+        input.setVisibility(typing?VISIBLE:GONE);submit.setVisibility(typing?VISIBLE:GONE);mic.setVisibility(typing?VISIBLE:GONE);
         if(typing)input.setHint(session.isBlind()?"Sigilla una risposta…":"La tua risposta…");
         boolean names=screen.equals("duel")&&modal.isEmpty();
         nameOne.setVisibility(names?VISIBLE:GONE);nameTwo.setVisibility(names?VISIBLE:GONE);
@@ -276,6 +282,22 @@ public final class TopperiaView extends ViewGroup {
     }
     private void playAgain(){if(session==null){show("home");return;}if(session.mode==GameSession.Mode.DUEL){pendingMode=GameSession.Mode.DUEL;duelRanking=null;duelReturn="results";show("duel");}else choose(GameSession.Mode.SOLO);}
     private RankedList daily(){long day=java.time.LocalDate.now(java.time.ZoneId.of("Europe/Rome")).toEpochDay();return rankings.get((int)Math.floorMod(day,rankings.size()));}
+    /** The system recognizer shows its own listening sheet, so no microphone permission is needed. */
+    private void listen(){
+        if(session==null||!screen.equals("game"))return;
+        Intent intent=new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE,"it-IT");
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT,session.isBlind()?"Di' la risposta da sigillare":"Di' la tua risposta");
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS,1);
+        try{hideKeyboard();activity.startActivityForResult(intent,SPEECH_REQUEST);}catch(android.content.ActivityNotFoundException e){tell("Il riconoscimento vocale non è disponibile su questo telefono.");}
+    }
+    /** Fills the field and leaves the choice to send it, so a misheard word never costs an attempt. */
+    public void heard(String text){
+        if(text==null||text.trim().isEmpty()||!screen.equals("game")||input.getVisibility()!=VISIBLE)return;
+        String answer=text.trim();if(answer.length()>GameSession.MAX_INPUT_LENGTH)answer=answer.substring(0,GameSession.MAX_INPUT_LENGTH);
+        input.setText(answer);input.setSelection(answer.length());tell("Ho sentito «"+answer+"». Tocca ↑ per confermare.");
+    }
     private void guess(){
         if(session==null||!screen.equals("game"))return;
         if(now()-lastSubmissionAt<220)return;
@@ -325,12 +347,12 @@ public final class TopperiaView extends ViewGroup {
 
     @Override protected void onMeasure(int w,int h){
         int ww=MeasureSpec.getSize(w),hh=MeasureSpec.getSize(h);setMeasuredDimension(ww,hh);scale=ww/400f;H=hh/scale;keyboard=H<620;
-        input.measure(exact(258),exact(52));submit.measure(exact(52),exact(52));nameOne.measure(exact(232),exact(44));nameTwo.measure(exact(232),exact(44));
+        input.measure(exact(204),exact(52));submit.measure(exact(52),exact(52));mic.measure(exact(52),exact(52));nameOne.measure(exact(232),exact(44));nameTwo.measure(exact(232),exact(44));
     }
     private int exact(float size){return MeasureSpec.makeMeasureSpec((int)(size*scale),MeasureSpec.EXACTLY);}
     @Override protected void onLayout(boolean changed,int l,int t,int r,int b){
         float y=H-84;
-        place(input,42,y+6,300,y+58);place(submit,314,y+6,366,y+58);
+        place(input,42,y+6,246,y+58);place(mic,256,y+6,308,y+58);place(submit,314,y+6,366,y+58);
         place(nameOne,118,228,350,272);place(nameTwo,118,360,350,404);
     }
     private void place(View view,float left,float top,float right,float bottom){view.layout((int)(left*scale),(int)(top*scale),(int)(right*scale),(int)(bottom*scale));}
@@ -346,10 +368,10 @@ public final class TopperiaView extends ViewGroup {
         drawPageFrame(c);
         float nativeProgress=previousPage==null?1:Motion.ease(Motion.progress(now(),pageAt,380));
         float shake=shake();
-        input.setTranslationX((pageShift+shake)*scale);submit.setTranslationX((pageShift+shake)*scale);
+        input.setTranslationX((pageShift+shake)*scale);submit.setTranslationX((pageShift+shake)*scale);mic.setTranslationX((pageShift+shake)*scale);
         nameOne.setTranslationX(pageShift*scale);nameTwo.setTranslationX(pageShift*scale);
-        input.setAlpha(nativeProgress);submit.setAlpha(nativeProgress);nameOne.setAlpha(nativeProgress);nameTwo.setAlpha(nativeProgress);
-        boolean ready=nativeProgress>.8f;input.setEnabled(ready);submit.setEnabled(ready);nameOne.setEnabled(ready);nameTwo.setEnabled(ready);
+        input.setAlpha(nativeProgress);submit.setAlpha(nativeProgress);mic.setAlpha(nativeProgress);nameOne.setAlpha(nativeProgress);nameTwo.setAlpha(nativeProgress);
+        boolean ready=nativeProgress>.8f;input.setEnabled(ready);submit.setEnabled(ready);mic.setEnabled(ready);nameOne.setEnabled(ready);nameTwo.setEnabled(ready);
         nav(c);
         if(!modal.isEmpty())modal(c);
         toast(c);
@@ -1142,6 +1164,7 @@ public final class TopperiaView extends ViewGroup {
             case "next":a.moveTo(9,4);a.lineTo(17,12);a.lineTo(9,20);c.drawPath(a,p);break;
             case "close":c.drawLine(6,6,18,18,p);c.drawLine(18,6,6,18,p);break;
             case "check":p.setStrokeWidth(2.6f);a.moveTo(5,12.5f);a.lineTo(10,17.5f);a.lineTo(19,7);c.drawPath(a,p);break;
+            case "mic":c.drawRoundRect(8,2,16,15,4,4,p);c.drawArc(4,6,20,19,0,180,false,p);c.drawLine(12,19,12,22,p);c.drawLine(8,22,16,22,p);break;
             case "lock":c.drawRoundRect(5,10,19,21,3,3,p);c.drawArc(8,3,16,15,180,180,false,p);c.drawLine(8,9,8,10,p);c.drawLine(16,9,16,10,p);c.drawLine(12,14,12,17,p);break;
             case "crown":p.setStyle(Paint.Style.FILL);a.moveTo(3,18);a.lineTo(4,7);a.lineTo(9,12);a.lineTo(12,4);a.lineTo(15,12);a.lineTo(20,7);a.lineTo(21,18);a.close();c.drawPath(a,p);c.drawRect(3,19,21,21,p);break;
             case "target":c.drawCircle(12,12,10,p);c.drawCircle(12,12,5.5f,p);c.drawCircle(12,12,1.2f,p);break;

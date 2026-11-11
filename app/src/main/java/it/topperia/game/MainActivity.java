@@ -38,6 +38,13 @@ public final class MainActivity extends Activity {
         }
     }
 
+    @Override protected void onActivityResult(int request, int result, android.content.Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request != TopperiaView.SPEECH_REQUEST || result != RESULT_OK || data == null || game == null) return;
+        java.util.ArrayList<String> heard = data.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS);
+        if (heard != null && !heard.isEmpty()) game.heard(heard.get(0));
+    }
+
     @Override protected void onPause() { super.onPause(); game.pause(); game.save(); }
     @Override protected void onResume() { super.onResume(); if (game != null) game.resume(); }
     @Override protected void onDestroy() { game.dispose(); super.onDestroy(); }
