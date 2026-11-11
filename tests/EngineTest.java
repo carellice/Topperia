@@ -174,7 +174,10 @@ public final class EngineTest {
     }
 
     private static void shippedRankingsIntegration() {
-        check(Rankings.all().size() == 36, "all thirty-six editorial rankings ship");
+        check(Rankings.all().size() == 200, "all two hundred editorial rankings ship");
+        java.util.Map<String, Integer> perCategory = new java.util.HashMap<>();
+        for (RankedList ranking : Rankings.all()) perCategory.merge(ranking.category, 1, Integer::sum);
+        for (Integer count : perCategory.values()) check(count >= 20, "every category offers at least twenty rankings");
         Set<String> ids = new HashSet<>();
         for (RankedList ranking : Rankings.all()) {
             check(ids.add(ranking.id), "each ranking has a unique persistence id");

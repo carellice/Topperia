@@ -10,7 +10,7 @@
   <a href="https://github.com/carellice/Topperia/releases/latest"><img alt="Ultima versione" src="https://img.shields.io/github/v/release/carellice/Topperia?label=ultima%20versione&amp;color=315D43" /></a>
   <img alt="Android 8.0 o successivo" src="https://img.shields.io/badge/Android-8.0%2B-315D43?logo=android&amp;logoColor=white" />
   <img alt="Java 17" src="https://img.shields.io/badge/Java-17-183B32?logo=openjdk&amp;logoColor=white" />
-  <img alt="36 classifiche" src="https://img.shields.io/badge/Classifiche-36-DCF58D?labelColor=183B32" />
+  <img alt="200 classifiche" src="https://img.shields.io/badge/Classifiche-200-DCF58D?labelColor=183B32" />
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@
   &nbsp;·&nbsp; <a href="docs/PRIVACY.md">Privacy</a>
 </p>
 
-Un trivia nativo Android, in italiano, per chi ama chiedersi «ma sarà davvero nella Top 10?». Trentasei classifiche reali, dieci tentativi e il piacere di una risposta inaspettata. **Tutte le partite funzionano offline**, da soli o sfidandosi sullo stesso telefono.
+Un trivia nativo Android, in italiano, per chi ama chiedersi «ma sarà davvero nella Top 10?». Duecento classifiche reali in dieci categorie, dieci tentativi e il piacere di una risposta inaspettata. **Tutte le partite funzionano offline**, da soli o sfidandosi sullo stesso telefono.
 
 <p align="center">
   <img src="docs/images/home.png" alt="La nuova home notturna di Topperia con Sorprendimi e le modalità Da solo e 1 contro 1" width="330" />
@@ -52,9 +52,9 @@ Record, statistiche, preferenze e piccoli traguardi restano sul dispositivo. Nes
 
 Il simbolo originale, il prompt e le informazioni sulla sua integrazione sono in [branding/](branding/README.md).
 
-## Trentasei modi di essere curiosi
+## Duecento modi di essere curiosi
 
-**36 classifiche e 360 risposte**, dalle montagne alle lune del Sistema solare, dai nomi italiani agli aeroporti, dal consumo di birra ai film e ai videogiochi, fino ai papi, agli imperatori romani e alle prime canzoni di Sanremo.
+**200 classifiche e 2.000 risposte**, venti per ognuna delle dieci categorie: dalle montagne alle lune del Sistema solare, dai nomi italiani agli aeroporti, dal consumo di birra ai film e ai videogiochi, fino ai papi, agli imperatori romani, ai ponti più lunghi, ai medaglieri olimpici e alla smorfia napoletana.
 
 Ogni round dichiara **anno, criterio e fonte**. Il catalogo è incluso nell’app: contiene fotografie dei dati in un momento preciso e non interroga servizi esterni durante la partita. Le serie storiche mantengono il proprio riferimento temporale.
 
@@ -64,6 +64,7 @@ Le fonti si consultano dal gioco e nella documentazione:
 - [Natura, spazio e scienza](data/SOURCES_NATURE.md): laghi, fiumi, parchi, costellazioni, elementi e altre curiosità.
 - [Italia, mondo e cultura](data/SOURCES_WORLD.md): Istat, aeroporti, caffè, cinema, musica e videogiochi.
 - [Storia e geografia](data/SOURCES_HISTORY.md): papi, imperatori romani, presidenti della Repubblica, Stati USA, Sanremo e capitali del Nord.
+- [Venti classifiche per categoria](data/SOURCES_CATEGORIES.md): le 164 classifiche aggiunte nella 1.1.11, categoria per categoria.
 
 ## Installa e resta aggiornato
 

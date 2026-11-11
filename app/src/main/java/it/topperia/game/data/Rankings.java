@@ -153,6 +153,16 @@ public final class Rankings {
         catalog.addAll(NatureRankings.all());
         catalog.addAll(WorldRankings.all());
         catalog.addAll(HistoryRankings.all());
+        catalog.addAll(StoriaRankings.all());
+        catalog.addAll(ItaliaRankings.all());
+        catalog.addAll(CulturaRankings.all());
+        catalog.addAll(MondoRankings.all());
+        catalog.addAll(NaturaRankings.all());
+        catalog.addAll(SpazioRankings.all());
+        catalog.addAll(ScienzaRankings.all());
+        catalog.addAll(CuriositaRankings.all());
+        catalog.addAll(SportRankings.all());
+        catalog.addAll(ArchitetturaRankings.all());
         return Collections.unmodifiableList(catalog);
     }
 
